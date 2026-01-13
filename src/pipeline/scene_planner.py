@@ -6,6 +6,11 @@ ensuring visual consistency across all scenes through:
 - Consistent visual themes and color palettes
 - Recurring visual motifs
 - Coherent style progression
+
+VIRAL SHORTS OPTIMIZATION:
+- ⚡ Fast scene pacing (max 5-8 seconds per scene for shorts)
+- 🎬 Quick transitions for engagement
+- 📱 Mobile-optimized visual compositions
 """
 
 from typing import Optional
@@ -91,7 +96,14 @@ class ScenePlanner:
         Returns:
             List of planned scenes with cohesive image prompts
         """
-        print(f"🎬 Planning {len(script.scenes)} scenes with visual continuity...")
+        is_short = request.format == VideoFormat.SHORT
+
+        if is_short:
+            print(
+                f"🎬 Planning {len(script.scenes)} scenes for VIRAL SHORT (max 8s/scene)..."
+            )
+        else:
+            print(f"🎬 Planning {len(script.scenes)} scenes with visual continuity...")
 
         # Step 1: Analyze script to determine best visual theme
         visual_theme = self._determine_visual_theme(script, request)
@@ -119,15 +131,22 @@ class ScenePlanner:
                 request=request,
             )
 
-            # Determine transition type
+            # Determine transition type (faster for shorts)
             transition = self._determine_transition(i, len(script.scenes), scene.mood)
+
+            # For viral shorts, prefer faster transitions
+            if is_short and transition in ["dissolve", "fade_to_black"]:
+                transition = "crossfade"
+
+            # Calculate duration with viral optimization for shorts
+            duration = self.estimate_scene_duration(scene.narration, is_short=is_short)
 
             planned_scene = PlannedScene(
                 scene_number=scene.scene_number,
                 narration=scene.narration,
                 visual_description=scene.visual_description,
                 image_prompt=image_prompt,
-                duration_seconds=scene.duration_seconds,
+                duration_seconds=duration,
                 mood=scene.mood,
                 transition=transition,
             )
@@ -140,6 +159,10 @@ class ScenePlanner:
                 "mood": scene.mood,
                 "key_elements": scene.key_visual_elements,
             }
+
+        # Apply viral optimization for shorts
+        if is_short:
+            planned_scenes = self.optimize_for_viral(planned_scenes)
 
         print(f"✅ All {len(planned_scenes)} scenes planned with visual continuity")
         return planned_scenes
@@ -428,28 +451,84 @@ Return ONLY the enhanced prompt text, nothing else.
             return base_prompt
 
     def estimate_scene_duration(
-        self, narration: str, words_per_minute: int = 150
+        self, narration: str, words_per_minute: int = 150, is_short: bool = False
     ) -> float:
         """
         Estimate scene duration based on narration length.
+
+        For viral shorts, enforces faster pacing (max 5-8 seconds per scene).
+
+        Args:
+            narration: The narration text
+            words_per_minute: Speaking rate (higher = faster for shorts)
+            is_short: Whether this is a short-form video
         """
         word_count = len(narration.split())
+
+        # Faster speaking rate for shorts (more energetic delivery)
+        if is_short:
+            words_per_minute = 180  # Faster pace for viral content
+
         duration = (word_count / words_per_minute) * 60
 
-        # Add small buffer for natural pauses
-        duration *= 1.1
+        # Add small buffer for natural pauses (smaller for shorts)
+        if is_short:
+            duration *= 1.05  # Tighter timing for shorts
+        else:
+            duration *= 1.1
 
-        # Minimum 3 seconds, maximum 120 seconds per scene
-        return max(3.0, min(120.0, duration))
+        # VIRAL SHORTS: Enforce max 5-8 seconds per scene
+        if is_short:
+            # Minimum 2 seconds, maximum 8 seconds per scene for shorts
+            return max(2.0, min(8.0, duration))
+        else:
+            # Minimum 3 seconds, maximum 120 seconds per scene for long-form
+            return max(3.0, min(120.0, duration))
+
+    def estimate_scene_duration_viral(self, narration: str) -> float:
+        """
+        Estimate scene duration optimized for viral shorts.
+
+        Enforces strict 5-8 second max per scene for maximum engagement.
+        """
+        return self.estimate_scene_duration(narration, is_short=True)
 
     def adjust_scene_timing(
-        self, scenes: list[PlannedScene], target_duration: tuple[int, int]
+        self,
+        scenes: list[PlannedScene],
+        target_duration: tuple[int, int],
+        is_short: bool = False,
     ) -> list[PlannedScene]:
         """
         Adjust scene timing to fit within target duration.
+
+        For viral shorts, enforces faster pacing with strict per-scene limits.
+
+        Args:
+            scenes: List of planned scenes
+            target_duration: Tuple of (min_seconds, max_seconds)
+            is_short: Whether this is a short-form video
         """
         min_duration, max_duration = target_duration
         current_total = sum(s.duration_seconds for s in scenes)
+
+        # VIRAL SHORTS: Enforce strict per-scene limits
+        if is_short:
+            max_scene_duration = 8.0  # Maximum 8 seconds per scene
+            min_scene_duration = 2.0  # Minimum 2 seconds per scene
+
+            for scene in scenes:
+                # Clamp each scene to viral-friendly duration
+                scene.duration_seconds = max(
+                    min_scene_duration, min(max_scene_duration, scene.duration_seconds)
+                )
+
+            # Recalculate total after clamping
+            current_total = sum(s.duration_seconds for s in scenes)
+
+            print(
+                f"  ⚡ Viral pacing: {len(scenes)} scenes, avg {current_total / len(scenes):.1f}s each"
+            )
 
         if min_duration <= current_total <= max_duration:
             return scenes
@@ -460,6 +539,43 @@ Return ONLY the enhanced prompt text, nothing else.
 
         # Adjust each scene proportionally
         for scene in scenes:
-            scene.duration_seconds = round(scene.duration_seconds * factor, 1)
+            new_duration = scene.duration_seconds * factor
+
+            # For shorts, still respect the max limit
+            if is_short:
+                new_duration = max(2.0, min(8.0, new_duration))
+
+            scene.duration_seconds = round(new_duration, 1)
+
+        return scenes
+
+    def optimize_for_viral(self, scenes: list[PlannedScene]) -> list[PlannedScene]:
+        """
+        Optimize scene list for viral short-form content.
+
+        - Enforces max 8 seconds per scene
+        - Ensures punchy, fast-paced timing
+        - Adjusts transitions for quick cuts
+        """
+        print("  🔥 Optimizing for viral shorts...")
+
+        for scene in scenes:
+            # Cap scene duration at 8 seconds
+            if scene.duration_seconds > 8.0:
+                scene.duration_seconds = 8.0
+
+            # Ensure minimum 2 seconds
+            if scene.duration_seconds < 2.0:
+                scene.duration_seconds = 2.0
+
+            # Use faster transitions for viral content
+            if scene.transition in ["dissolve", "fade_to_black"]:
+                scene.transition = "crossfade"  # Faster transition
+
+        total = sum(s.duration_seconds for s in scenes)
+        avg = total / len(scenes) if scenes else 0
+        print(
+            f"  ⚡ Viral optimization complete: {total:.1f}s total, {avg:.1f}s avg per scene"
+        )
 
         return scenes
