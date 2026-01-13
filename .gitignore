@@ -4,27 +4,91 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
 env/
 venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
 
 # Output
 output/
 *.mp4
+*.mp3
+*.wav
 
 # Credentials & Sensitive Files
 client_secrets.json
 credentials.json
 *.env
 .env
+.env.local
+.env.*.local
 encoded_client_secret.txt
 encoded_credentials.txt
 prompt.txt
-
-# VS Code
-.vscode/
-
-#html
-*.html
+*.pem
+*.key
 
 # Ignore all JSON key files
 gemini-youtube-automator-4ff94a2f3c8a.json
+
+# IDE / Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# HTML
+*.html
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp

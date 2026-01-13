@@ -1,18 +1,30 @@
-# Gemini API and Google Auth
-google-generativeai
+# AI APIs
+openai>=1.0.0
+google-genai
+
+# Google APIs for YouTube upload
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 
-# Text-to-Speech and Video Editing
-gTTS
+# Video Processing
 moviepy==1.0.3
+Pillow>=9.5.0
 
-# For Pexels API
+# Audio / Text-to-Speech
+gTTS
+pydub
+
+# Web requests
+requests
+aiohttp
+
+# Environment and CLI
+python-dotenv
+argparse
+
+# Image processing (for Pexels fallback)
 requests
 
-# For image processing (e.g., slides, thumbnails)
-Pillow==9.5.0
-
-# ✅ For MP3 to WAV conversion
-pydub
+# Optional: Rich console output (nice to have)
+rich

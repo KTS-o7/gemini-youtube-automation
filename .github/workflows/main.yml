@@ -2,7 +2,7 @@ name: Autonomous AI Course Generator
 
 on:
   schedule:
-    - cron: '0 7 * * *' # 12:30 PM IST daily
+    - cron: "0 7 * * *" # 12:30 PM IST daily
   workflow_dispatch:
 
 jobs:
@@ -18,8 +18,8 @@ jobs:
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          python-version: "3.11"
+          cache: "pip"
 
       - name: 📦 Install dependencies and patch ImageMagick
         run: |
@@ -48,7 +48,9 @@ jobs:
       - name: 🚀 Run Autonomous Production Pipeline
         id: production-run
         env:
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER || 'gemini' }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: python main.py
 
