@@ -8,6 +8,13 @@ Updated with latest OpenAI models (2025):
 - STT: gpt-4o-mini-transcribe ($0.003/min), gpt-4o-transcribe ($0.006/min)
 
 Uses Structured Outputs with Pydantic for guaranteed valid JSON responses.
+
+TYPE SYSTEM DESIGN:
+- Pydantic models (in api_models.py) are used ONLY at API boundaries
+- Internal data flow uses plain dataclasses (in models.py)
+- Use conversion functions from api_models.py to bridge the two
+
+See src/pipeline/api_models.py for the Pydantic models and conversion utilities.
 """
 
 import os
@@ -17,49 +24,22 @@ from typing import Optional, Type, TypeVar
 from pydantic import BaseModel
 
 # =============================================================================
-# Pydantic Models for Structured Outputs
+# API Models for Structured Outputs
 # =============================================================================
+# These are imported from api_models.py for backward compatibility.
+# New code should import directly from api_models.py.
+from ..pipeline.api_models import (
+    ResearchAPIModel,
+    ResearchFactAPIModel,
+    SceneAPIModel,
+    ScriptAPIModel,
+)
 
-
-class SceneModel(BaseModel):
-    """A single scene in the video script."""
-
-    scene_number: int
-    narration: str
-    visual_description: str
-    duration_seconds: float
-    mood: str
-    key_visual_elements: list[str] = []
-
-
-class ScriptModel(BaseModel):
-    """Complete script for the video."""
-
-    title: str
-    hook: str
-    scenes: list[SceneModel]
-    total_duration_seconds: float
-    hashtags: list[str]
-    thumbnail_prompt: str
-    description: str
-
-
-class ResearchFactModel(BaseModel):
-    """A single fact with source."""
-
-    fact: str
-    source: str = "general knowledge"
-
-
-class ResearchModel(BaseModel):
-    """Research results for a topic."""
-
-    key_points: list[str]
-    facts: list[ResearchFactModel]
-    examples: list[str]
-    analogies: list[str]
-    related_topics: list[str] = []
-
+# Backward compatibility aliases (deprecated - use api_models.py directly)
+SceneModel = SceneAPIModel
+ScriptModel = ScriptAPIModel
+ResearchFactModel = ResearchFactAPIModel
+ResearchModel = ResearchAPIModel
 
 # Type variable for generic structured output
 T = TypeVar("T", bound=BaseModel)
@@ -90,7 +70,8 @@ class AIConfig:
 
     # Text-to-speech - gpt-4o-mini-tts is $0.015/minute
     tts_model: str = "gpt-4o-mini-tts"  # alternatives: tts-1, tts-1-hd
-    tts_voice: str = "alloy"  # Options: alloy, echo, fable, onyx, nova, shimmer
+    tts_voice: str = "marin"  # Best quality. Options: alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar
+    tts_instructions: str = "Speak clearly and professionally, like an educational video narrator. Use a warm, engaging tone."
 
 
 # =============================================================================
@@ -209,7 +190,7 @@ class AIClient:
             model=self.config.openai_model,
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
         )
         return response.choices[0].message.content
 
@@ -298,30 +279,49 @@ class AIClient:
         return base64.b64decode(image_base64)
 
     def generate_speech(
-        self, text: str, voice: Optional[str] = None, speed: float = 1.0
+        self,
+        text: str,
+        voice: Optional[str] = None,
+        speed: float = 1.0,
+        instructions: Optional[str] = None,
     ) -> bytes:
         """
         Generate speech using OpenAI's TTS API.
 
         Args:
             text: Text to convert to speech
-            voice: Voice to use (alloy, echo, fable, onyx, nova, shimmer)
+            voice: Voice to use. Built-in voices:
+                   alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar
+                   Recommended: marin or cedar for best quality
             speed: Speech speed (0.25 to 4.0)
+            instructions: Natural language instructions to control voice style (gpt-4o-mini-tts only).
+                         Examples: "Speak in a cheerful tone", "Speak slowly and clearly",
+                         "Speak like an educational video narrator"
 
         Returns:
             Audio as bytes (MP3 format)
         """
         voice = voice or self.config.tts_voice
 
-        response = self.openai_client.audio.speech.create(
-            model=self.config.tts_model, voice=voice, input=text, speed=speed
-        )
+        # Build request parameters
+        params = {
+            "model": self.config.tts_model,
+            "voice": voice,
+            "input": text,
+            "speed": speed,
+        }
+
+        # Add instructions if provided (only works with gpt-4o-mini-tts)
+        if instructions and self.config.tts_model == "gpt-4o-mini-tts":
+            params["instructions"] = instructions
+
+        response = self.openai_client.audio.speech.create(**params)
 
         return response.content
 
 
 # =============================================================================
-# Singleton and Factory
+# Factory Functions (Prefer Dependency Injection)
 # =============================================================================
 
 
@@ -329,8 +329,65 @@ _default_client: Optional[AIClient] = None
 
 
 def get_ai_client(config: Optional[AIConfig] = None) -> AIClient:
-    """Get or create the default AI client instance."""
+    """
+    Get or create the default AI client instance.
+
+    DEPRECATED: This function maintains a global singleton which makes
+    testing difficult and can lead to unexpected behavior when config
+    changes. Prefer creating an AIClient explicitly and passing it
+    via dependency injection.
+
+    For new code, use:
+        client = AIClient(config)
+        # Pass client explicitly to functions that need it
+
+    Args:
+        config: Optional configuration. If provided AND different from
+                the current config, a new client is created.
+
+    Returns:
+        AIClient instance
+    """
     global _default_client
-    if _default_client is None or config is not None:
+    if _default_client is None:
+        _default_client = AIClient(config)
+    elif config is not None:
+        # Only replace if explicitly requested with new config
+        # Log a warning about this potentially surprising behavior
+        import warnings
+
+        warnings.warn(
+            "Replacing global AI client with new config. "
+            "Consider using explicit dependency injection instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         _default_client = AIClient(config)
     return _default_client
+
+
+def create_ai_client(config: Optional[AIConfig] = None) -> AIClient:
+    """
+    Create a new AI client instance (preferred factory method).
+
+    Unlike get_ai_client(), this always creates a new instance
+    and does not use global state.
+
+    Args:
+        config: Optional configuration for the client
+
+    Returns:
+        New AIClient instance
+    """
+    return AIClient(config)
+
+
+def reset_ai_client() -> None:
+    """
+    Reset the global AI client singleton.
+
+    This is primarily useful for testing to ensure a clean state
+    between tests.
+    """
+    global _default_client
+    _default_client = None
