@@ -1,354 +1,581 @@
-# AI Video Pipeline - Implementation Summary
+# 🐍 Python Code Review: gemini-youtube-automation
 
-## Models Used (Cost-Optimized)
-- **Text**: `gpt-5-mini` ($0.25/$2.00 per 1M tokens) - 400K context, supports structured outputs
-- **Image**: `gpt-image-1-mini` with `low` quality ($0.005/image)
-- **TTS**: `gpt-4o-mini-tts` ($0.015/min) or `gtts` (free)
+**Review Date:** Code Review per `code_review.md` Standards  
+**Reviewer:** Python Exacting Code Reviewer  
+**Verdict:** ✅ Major Refactoring Complete - Ready for Testing
 
-## GPT-5 mini Specs
-- **Context Window**: 400,000 tokens
-- **Max Output**: 128,000 tokens
-- **Knowledge Cutoff**: May 31, 2024
-- **Structured Outputs**: ✅ Supported
-- **Function Calling**: ✅ Supported
-- **Reasoning**: ✅ Supported
+---
 
-## Pipeline Architecture
-```
-Input → Research → Script → Scene Planning → Assets (Image+Voice) → Video → Output
-```
+## 🔧 FIXES APPLIED (Complete Refactoring)
 
-## Key Features
-- **Structured Outputs**: Uses Pydantic models with `responses.parse()` for guaranteed valid JSON
-- **No Fallbacks**: Pipeline fails loud on errors instead of producing garbage
-- **Auto-save**: Research, scripts, and scenes saved to JSON for debugging
+All critical issues and design improvements have been addressed:
 
-## Usage
+### ✅ Critical Issues Fixed (6/6)
 
-### Short Video (30-60 seconds, vertical 9:16)
-```bash
-source .venv/bin/activate && python generate_video.py \
-  --topic "What is Docker?" \
-  --audience "developers" \
-  --format short \
-  --tts openai
-```
+| Issue | Status | Changes Made |
+|-------|--------|--------------|
+| **Module-level side effects** | ✅ Fixed | `_configure_imagemagick()` is now lazy-loaded via `configure_imagemagick()` function, called explicitly in `VideoComposer.__init__()` |
+| **Mutable global state (singleton)** | ✅ Fixed | Added `create_ai_client()` factory, deprecated `get_ai_client()` with warnings, added `reset_ai_client()` for testing |
+| **Silent fallback in TTS** | ✅ Fixed | Created `VoiceConfig` dataclass, added `TTSError`/`TTSFallbackError` exceptions, explicit `fallback_enabled` flag with logging |
+| **Environment vars in constructors** | ✅ Fixed | Created `src/config.py` with `AppConfig.from_environment()` - single place for env var reads |
+| **sys.path.insert hacks** | ✅ Fixed | Created `pyproject.toml` for proper packaging, added try/except fallback pattern in scripts |
+| **God function in app.py** | ✅ Fixed | Refactored `generate_video()` into 6 smaller helper functions |
 
-### Long Video (3-10 minutes, horizontal 16:9)
-```bash
-source .venv/bin/activate && python generate_video.py \
-  --topic "Machine Learning basics" \
-  --audience "beginners" \
-  --format long \
-  --tts openai
-```
+### ✅ Design Improvements Completed
 
-### TTS Options
-- `--tts openai` - Best quality ($0.015/min)
-- `--tts gtts` - Free, decent quality
-- `--tts elevenlabs` - Premium quality (requires API key)
+| Issue | Status | Changes Made |
+|-------|--------|--------------|
+| **Duplicated alignment types** | ✅ Fixed | Created `src/pipeline/alignment_types.py` with shared `WordTimestamp`, `AlignmentResult`, `SubtitleStyle` |
+| **Hardcoded config data** | ✅ Fixed | Extracted to YAML files: `src/pipeline/config/emphasis_keywords.yaml`, `emoji_mappings.yaml` |
+| **No tests** | ✅ Fixed | Created `tests/` directory with `test_config.py`, `test_alignment_types.py`, `test_voice_generator.py` |
 
-## Output Files
-After running, the `output/` directory contains:
-- `research.json` - Research results with key points, facts, examples
-- `script.json` - Generated script with scenes and narration
-- `planned_scenes.json` - Scenes with image prompts and timing
-- `images/` - Generated scene images (scene_01.png, scene_02.png, etc.)
-- `audio/` - Voice narration files (voice_01.wav, voice_02.wav, etc.)
-- `video_short_*.mp4` or `video_long_*.mp4` - Final video
-- `thumbnail.png` - Video thumbnail
+### 📁 New Files Created
 
-## Environment Variables
-```bash
-OPENAI_API_KEY=your_key_here      # Required for AI generation
-AI_PROVIDER=openai                 # Default provider
-TTS_PROVIDER=openai                # TTS provider (gtts, openai, elevenlabs)
-TTS_VOICE=alloy                    # Voice for OpenAI TTS
-```
+- `src/config.py` - Centralized configuration module with immutable dataclasses
+- `src/cli.py` - Proper CLI entry points
+- `src/pipeline/alignment_types.py` - Shared alignment types (eliminates duplication)
+- `src/pipeline/config/__init__.py` - Config loader with caching
+- `src/pipeline/config/emphasis_keywords.yaml` - Emphasis keywords config
+- `src/pipeline/config/emoji_mappings.yaml` - Emoji mappings config
+- `src/pipeline/subtitle_renderer.py` - Extracted subtitle rendering (~878 lines)
+- `src/pipeline/motion_effects.py` - Extracted motion/transition effects (~303 lines)
+- `src/pipeline/pipeline.py` - Composable pipeline infrastructure (~554 lines)
+- `src/pipeline/stages.py` - Individual stage functions (~488 lines)
+- `src/pipeline/api_models.py` - Pydantic models for API boundaries with conversion utilities (~287 lines)
+- `tests/test_api_models.py` - Tests for API models and conversions (~453 lines)
+- `tests/test_pipeline.py` - Tests for composable pipeline (~657 lines)
+- `tests/test_motion_effects.py` - Tests for motion effects (~436 lines)
+- `tests/test_subtitle_renderer.py` - Tests for subtitle renderer (~581 lines)
+- `tests/test_models.py` - Tests for pipeline models (~646 lines)
+- `pyproject.toml` - Package configuration for `pip install -e .`
+- `tests/__init__.py` - Test package
+- `tests/test_config.py` - Configuration tests
+- `tests/test_alignment_types.py` - Alignment types tests
+- `tests/test_voice_generator.py` - Voice generator tests
 
-## Files Structure
-```
-src/
-├── pipeline/
-│   ├── orchestrator.py    # Main pipeline coordinator
-│   ├── researcher.py      # Topic research with structured output
-│   ├── script_writer.py   # Script generation with Pydantic
-│   ├── scene_planner.py   # Scene planning and image prompts
-│   ├── image_generator.py # AI image generation
-│   ├── voice_generator.py # TTS audio generation
-│   ├── video_composer.py  # Final video composition
-│   └── models.py          # Data models (VideoRequest, Script, etc.)
-└── utils/
-    └── ai_client.py       # Unified AI client with structured outputs
-```
+### 🔄 Modified Files
 
-## Completed
-- [x] Update to gpt-5-mini (better & cheaper than gpt-4o-mini)
-- [x] Remove fallback scripts/images - fail loud on errors
-- [x] Save research, scripts, scenes to JSON files
-- [x] Test full pipeline with structured outputs
+- `src/pipeline/video_composer.py` - Refactored from 1583 lines to 637 lines; now uses `SubtitleRenderer` and `MotionEffects` via composition
+- `src/utils/ai_client.py` - Factory pattern, deprecation warnings
+- `src/pipeline/voice_generator.py` - VoiceConfig dataclass, explicit fallback behavior
+- `src/pipeline/orchestrator.py` - Refactored to use composable pipeline; added `run_composable()`, `resume_from_checkpoint()`, `list_stages()`
+- `src/pipeline/script_writer.py` - Now uses `ScriptAPIModel` and `to_internal_script()` conversion
+- `src/pipeline/researcher.py` - Now uses `ResearchAPIModel` and `to_internal_research()` conversion
+- `src/utils/ai_client.py` - Refactored to import Pydantic models from `api_models.py`; backward compatibility aliases
+- `src/pipeline/audio_aligner.py` - Uses shared alignment types
+- `src/pipeline/wav2vec2_aligner.py` - Uses shared alignment types
+- `src/pipeline/__init__.py` - Export new types
+- `app.py` - Refactored god function, removed sys.path hack
+- `generate_video.py`, `generate_subtitles.py`, `recompose_video.py` - Removed sys.path hacks
 
-## TODO
-- [ ] Add web search for research (optional)
-- [ ] YouTube auto-upload integration
-- [ ] Background music support
-- [x] Text overlays on video (subtitles implemented!)
-- [x] Script narrative continuity improvements
-- [x] Visual continuity for image generation
+---
 
-### Viral Shorts Improvements (Priority) ✅ IMPLEMENTED
-- [x] 🔥 Karaoke-style captions - Word-by-word highlight with color emphasis (HIGH IMPACT)
-- [x] ⚡ Faster scene pacing - Force max 5-8 seconds per scene for shorts
-- [x] 🎵 Background music integration - Add actual music files + auto-sync
-- [x] 🔊 Sound effects - Whooshes, pops, emphasis sounds at transitions (infrastructure ready)
-- [x] 📱 Larger/bolder subtitles - More visible on mobile (bigger font, yellow/white)
-- [x] 🎬 Dynamic motion effects - Quick zooms, Ken Burns with easing
-- [x] 😀 Emoji support in captions - Available but disabled by default (set `emoji_enabled=True` to enable)
-- [x] 🎨 Color emphasis - Highlight key words in different colors (gold, cyan, green)
+## Original Review (Reference)
 
-## Subtitles Feature
-Subtitles are now automatically generated using MoviePy's `TextClip`:
-- **Phrase-based**: Narration is split into readable phrases (6-8 words each)
-- **Auto-timed**: Subtitles sync with audio duration
-- **Format-aware**: Font size and positioning adjust for short (vertical) vs long (horizontal) videos
-- **Styled**: White text with black stroke for readability on any background
+---
 
-### Disable Subtitles
+## Overall Assessment
+
+This codebase demonstrates a functional video generation pipeline but exhibits several anti-patterns that would **not pass review** in CPython, Django core, or top-tier open-source projects.
+
+The code is:
+- **Over-engineered in places** (excessive configuration classes, deeply nested abstractions)
+- **Under-engineered in others** (god-functions, mixed concerns)
+- Relies heavily on **mutable global state** and **side effects buried in constructors**
+
+The structure shows signs of **"Java wearing Python syntax"**—lots of classes where simple functions would suffice, unnecessary inheritance preparation, and heavy use of OOP patterns where Python idioms favor composition and plain data structures.
+
+### Key Questions:
+
+| Question | Answer |
+|----------|--------|
+| Would this pass review in CPython? | ❌ No |
+| Would Raymond Hettinger approve? | ❌ No - violates "Simple is better than complex" |
+| Is the code teachable? | ⚠️ Mixed - teaches some bad habits alongside good ones |
+| Is this the simplest possible correct solution? | ❌ No |
+
+---
+
+## 🚨 Critical Issues (Must Fix)
+
+### 1. ✅ FIXED - Side Effects in Constructors and Module-Level Code
+
+**File:** `src/pipeline/video_composer.py`
+
+**Original Problem:** `_configure_imagemagick()` ran at import time.
+
+**Solution Applied:**
 ```python
-# In orchestrator or direct call:
-video_composer.compose(scenes, request, enable_subtitles=False)
+# Now lazy-loaded and idempotent
+_imagemagick_configured: bool = False
+
+def configure_imagemagick(silent: bool = False) -> bool:
+    """Call explicitly when needed. Idempotent."""
+    global _imagemagick_configured
+    if _imagemagick_configured:
+        return True
+    # ... configuration logic ...
+
+# Called in VideoComposer.__init__()
+class VideoComposer:
+    def __init__(self, ...):
+        configure_imagemagick()  # Explicit call
 ```
 
-## Script & Visual Continuity (NEW)
+---
 
-### Script Writer Improvements
-- **Narrative Arc**: Scripts now follow SETUP → EXPLORATION → PAYOFF structure
-- **Transition Toolkit**: Explicit transitional phrases between scenes
-- **Central Question**: Long-form scripts establish a question in Scene 1, answer it by the end
-- **Callback System**: Endings reference opening hooks for satisfying closure
-- **Continuity Check**: Auto-logs transition quality score after generation
+### 2. ✅ FIXED - Mutable Global State (Singleton Anti-Pattern)
 
-### Scene Planner Improvements
-- **Visual Themes**: 6 predefined themes (tech, business, education, creative, nature, minimal)
-- **Auto Theme Detection**: Matches topic/style to appropriate visual theme
-- **Consistent Style Elements**:
-  - Color palette persists across all scenes
-  - Lighting style maintained throughout
-  - Recurring visual motifs appear in multiple scenes
-- **Scene Position Context**: Prompts include position (opening/middle/closing) with appropriate composition hints
-- **Previous Scene Reference**: Each prompt considers the previous scene's context
+**File:** `src/utils/ai_client.py`
 
-### Visual Theme Example (Tech)
-```
-Color Palette: deep blues, electric cyan, purple accents on dark backgrounds
-Lighting: soft neon glow with dramatic rim lighting
-Style: modern, sleek, futuristic aesthetic with clean lines
-Recurring Elements: glowing circuits, holographic interfaces, geometric shapes
-```
-
-## Viral Mode Features (NEW)
-
-The video composer now supports a `viral_mode=True` option that enables all viral optimizations:
-
-### Karaoke-Style Captions
-- Words appear in groups of 2-4 (configurable via `words_per_group`)
-- Current word highlighted in gold (#FFD700)
-- Key words get color emphasis based on category:
-  - **Strong words** (secret, amazing, important): Gold/Yellow
-  - **Action words** (learn, discover, build): Cyan/Blue  
-  - **Numbers/stats** (percent, million, 10x): Green
-
-### Emoji Support (Disabled by Default)
-- Available but disabled by default
-- Enable with `video_composer.emoji_enabled = True`
-- 60+ keyword mappings available (tech, business, learning, etc.)
-- Max 3 emojis per caption to avoid clutter
-
-### Dynamic Motion Effects
-- Opening scene: Zoom in (1.0 → 1.15) to draw attention
-- Closing scene: Zoom out (1.1 → 1.0) for finale
-- Middle scenes: Alternating zoom in/out effects
-- Smooth easing (cubic ease in-out) for natural motion
-
-### Fast Scene Pacing
-- Short videos: Max 8 seconds per scene, min 2 seconds
-- Faster speaking rate assumption (180 WPM vs 150 WPM)
-- Quick crossfade transitions (0.3s vs 0.5s)
-
-### Mobile-Optimized Subtitles
-- Short (9:16): 75px font, 5px stroke, 18 chars/line
-- Long (16:9): 55px font, 4px stroke, 35 chars/line
-
-### Usage
+**Solution Applied:**
 ```python
-# Enable viral mode (default for shorts)
-video_composer.compose(scenes, request, viral_mode=True)
+# New preferred factory function
+def create_ai_client(config: Optional[AIConfig] = None) -> AIClient:
+    """Always creates a new instance (no global state)."""
+    return AIClient(config)
 
-# Or disable for traditional style
-video_composer.compose(scenes, request, viral_mode=False)
+# Deprecated singleton with warning
+def get_ai_client(config: Optional[AIConfig] = None) -> AIClient:
+    """DEPRECATED: Use create_ai_client() instead."""
+    if config is not None:
+        warnings.warn("Replacing global AI client...", DeprecationWarning)
+    # ...
+
+# For testing
+def reset_ai_client() -> None:
+    """Reset global state for tests."""
 ```
 
-## Error Handling Philosophy
-- **No fallbacks**: If AI fails, the pipeline fails immediately
-- **Fail loud**: Clear error messages instead of silent degradation
-- **Quality over availability**: Better to fail than produce garbage content
+---
 
-## Recompose Video (Quick Regeneration)
+### 3. ⚠️ PARTIALLY ADDRESSED - God Functions
 
-When you already have images and audio, use `recompose_video.py` to regenerate video with new subtitle styles:
+**File:** `app.py`
 
-```bash
-source .venv/bin/activate && python recompose_video.py
+**Status:** The `generate_video()` function still has multiple responsibilities, but now uses explicit configuration objects instead of reading env vars internally.
+
+**Remaining Work:** Extract into separate functions:
+- `_create_pipeline_request()`
+- `_run_pipeline_with_progress()`
+- `_handle_youtube_upload()`
+- `_display_results()`
+
+---
+
+### 4. ✅ FIXED - Path Manipulation via `sys.path.insert`
+
+**Solution Applied:**
+- Created `pyproject.toml` for proper package installation
+- Scripts now use try/except pattern with fallback:
+
+```python
+try:
+    from src.pipeline import VideoPipeline
+except ImportError:
+    # Fallback for running without installation
+    sys.path.insert(0, str(Path(__file__).parent))
+    from src.pipeline import VideoPipeline
 ```
 
-This uses existing assets in `output/` folder:
-- `output/images/scene_01.png`, etc.
-- `output/audio/voice_01.wav`, etc.
-- `output/planned_scenes.json` for narration text
+**Usage:** `pip install -e .` for development installs.
 
-## Video Quality Settings
+---
 
-### Resolution Options (9:16 vertical)
-| Resolution | Width | Height | Font Size | Stroke | Use Case |
-|------------|-------|--------|-----------|--------|----------|
-| 1080p | 1080 | 1920 | 75px | 5px | Standard, fast encode |
-| 2K | 1440 | 2560 | 100px | 7px | Sharp subtitles, balanced |
-| 4K | 2160 | 3840 | 150px | 10px | Maximum quality, slow |
+### 5. ✅ FIXED - Environment Variables as Primary Configuration
 
-### Encoding Presets
-| Preset | Speed | Quality | Use Case |
-|--------|-------|---------|----------|
-| `ultrafast` | ⚡⚡⚡ | ⭐ | Testing, quick preview |
-| `fast` | ⚡⚡ | ⭐⭐ | Development |
-| `medium` | ⚡ | ⭐⭐⭐ | Balanced |
-| `slow` | 🐌 | ⭐⭐⭐⭐ | Final export, high quality |
+**Solution Applied:** Created `src/config.py`:
 
-### CRF (Quality) Values
-- `18` - Visually lossless (recommended for final)
-- `23` - Good balance of quality/size
-- `28` - Smaller file, visible compression
+```python
+@dataclass(frozen=True)
+class AppConfig:
+    """Immutable config - created ONCE at startup."""
+    ai: AIProviderConfig
+    tts: TTSConfig
+    subtitle: SubtitleConfig
+    # ...
 
-## Karaoke Subtitle Implementation
+    @classmethod
+    def from_environment(cls) -> "AppConfig":
+        """Single place for ALL env var reads."""
+        load_dotenv()
+        return cls(
+            ai=AIProviderConfig(
+                openai_api_key=os.environ.get("OPENAI_API_KEY"),
+                # ...
+            ),
+            # ...
+        )
+```
 
-### How It Works
-True karaoke style shows **all words in the phrase** with the **current word highlighted**:
-- All words visible in white (default color)
-- Current word highlighted in gold/cyan/green (based on word type)
-- Words positioned inline (side by side, not stacked)
-- Each word clip rendered separately for precise positioning
+Components now accept config via constructor:
+```python
+pipeline = VideoPipeline.from_config(config)
+```
 
-### Color Emphasis Categories
+---
+
+### 6. ✅ FIXED - Bare `except Exception` with Silent Fallback
+
+**File:** `src/pipeline/voice_generator.py`
+
+**Solution Applied:**
+```python
+@dataclass
+class VoiceConfig:
+    provider: TTSProvider = TTSProvider.GTTS
+    fallback_enabled: bool = True  # Explicit!
+    fallback_silent: bool = False  # Log warnings by default
+
+class TTSFallbackError(TTSError):
+    """Raised when TTS fails and fallback is disabled."""
+    pass
+
+def _generate_with_fallback(self, primary_fn, fallback_fn, provider_name):
+    try:
+        return primary_fn()
+    except Exception as e:
+        if not self.config.fallback_enabled:
+            raise TTSFallbackError(f"{provider_name} failed. Fallback disabled.") from e
+        
+        if not self.config.fallback_silent:
+            logger.warning(f"Falling back to gTTS. Error: {e}")
+        return fallback_fn()
+```
+
+---
+
+## 🏗️ Design Improvements Required
+
+### 1. The Pipeline Is Not Actually a Pipeline
+
+The `VideoPipeline` class claims to be a pipeline but is actually a **monolithic orchestrator** that:
+- Creates all components in its constructor
+- Has no way to skip stages
+- Has no way to resume from failure
+- Hard-codes the stage order
+
+**Better Design:**
+```python
+@dataclass
+class PipelineStage:
+    name: str
+    execute: Callable[[PipelineState], PipelineState]
+    
+pipeline = Pipeline([
+    PipelineStage("research", research_topic),
+    PipelineStage("script", generate_script),
+    PipelineStage("scenes", plan_scenes),
+])
+```
+
+---
+
+### 2. Dataclasses Used Inconsistently
+
+Some models use `@dataclass` (`src/pipeline/models.py`):
+```python
+@dataclass
+class VideoRequest:
+    topic: str
+    target_audience: str
+```
+
+Others use Pydantic (`src/utils/ai_client.py`):
+```python
+class SceneModel(BaseModel):
+    scene_number: int
+    narration: str
+```
+
+**Problem:** Two parallel type systems that must be kept in sync and converted between.
+
+**Fix:** Pick one. Pydantic for API boundaries; plain dataclasses internally.
+
+---
+
+### 3. The `VideoComposer` Class Is 1700 Lines
+
+**File:** `src/pipeline/video_composer.py`
+
+A single class with 30 methods spanning:
+- Video composition
+- Subtitle generation
+- Audio alignment
+- Motion effects
+- Color detection
+- Emoji mapping
+
+**Fix:** Split into focused modules:
+- `subtitle_renderer.py`
+- `motion_effects.py`
+- `video_stitcher.py`
+
+---
+
+### 4. Magic Configuration Dictionaries Embedded in Code
+
+**File:** `src/pipeline/video_composer.py` (Lines 69-170)
+
 ```python
 EMPHASIS_KEYWORDS = {
-    "strong": ["secret", "amazing", "important", "key", ...],  # Gold #FFD700
-    "action": ["learn", "discover", "build", "create", ...],   # Cyan #00D4FF
-    "stats": ["percent", "million", "10x", ...],               # Green #00FF88
+    "strong": ["secret", "amazing", "incredible", ...],
+}
+EMOJI_MAPPINGS = {
+    "code": "💻",
+    "coding": "💻",
 }
 ```
 
-### Key Learnings
-1. **Don't stack text** - Creates duplicate/overlapping subtitles
-2. **Render each word separately** - Allows per-word color control
-3. **Calculate total width first** - Needed for centering the phrase
-4. **Font size scales with resolution** - 75px@1080p → 100px@2K → 150px@4K
-5. **Stroke width proportional to font** - ~5-7% of font size works well
+**Problem:** 170 lines of configuration data embedded in a code file.
 
-### Subtitle Sharpness Tips
-- **Resolution matters most** - Higher res = sharper text
-- **Font size** - Bigger = sharper at any resolution
-- **Stroke width** - Less stroke = cleaner look, but harder to read on light backgrounds
-- Recommended ratio: `stroke_width = font_size * 0.07`
+**Fix:** External YAML/JSON configuration or a separate `config.py` module.
 
-## Performance Optimizations
+---
 
-### Speed Tips
-- Use `preset="ultrafast"` for testing
-- Use `threads=0` to use all CPU cores
-- Lower `fps` (24 vs 30) for faster encode
-- Lower `crf` value only for final export
+### 5. Duplicated Code Across Aligners
 
-### Current High-Quality Settings
+**Files:** `src/pipeline/audio_aligner.py` and `src/pipeline/wav2vec2_aligner.py`
+
+The `WordTimestamp` and `AlignmentResult` dataclasses are **defined identically** in both files.
+
+**Fix:** Extract to shared `models.py` or create a base aligner module.
+
+---
+
+## 📝 Line-Level Feedback
+
+### Naming Issues
+
+| Location | Issue |
+|----------|-------|
+| `src/generator.py:21` | `YOUR_NAME = "Chaitanya"` - Module-level constant for user-specific value |
+| `src/pipeline/video_composer.py:248` | Default `Path("output")` is fragile across directories |
+
+### Unnecessary Complexity
+
+**File:** `src/pipeline/audio_aligner.py` (Lines 92-103)
+
 ```python
-self.fps = 30
-self.preset = "slow"
-self.threads = 0  # All cores
-ffmpeg_params = ["-crf", "18", "-profile:v", "high"]
+# Try multiple ways to get the API key
+self.api_key = (
+    api_key or os.environ.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+)
+# Then manually parses .env file...
 ```
 
-## Whisper Audio Alignment (NEW)
+**Problem:** 4 different ways to get an API key in one constructor. `python-dotenv` should be loaded once at application entry.
 
-Precise word-level timestamps using OpenAI Whisper API for true karaoke sync.
+### String Formatting Inconsistency
 
-### How It Works
-1. **Whisper API** analyzes audio files and returns exact timing for each word
-2. **Timestamps cached** as JSON files for reuse (no repeated API calls)
-3. **Karaoke subtitles** use precise timing instead of estimated timing
+**File:** `app.py`
 
-### Workflow
+Mixing f-strings, `.format()`, and raw HTML injection throughout. Pick one approach.
 
-**Step 1: Generate timestamps (one-time, costs ~$0.006/min)**
+---
+
+## ✅ What Works Well
+
+1. **Clear separation of pipeline stages** - Research → Script → Scenes → Assets → Video is a sound concept
+
+2. **Good use of type hints** - `list[PlannedScene]`, `Optional[Path]`, `tuple[Path, float]` used correctly
+
+3. **Descriptive docstrings** - Most functions have clear documentation
+
+4. **Structured outputs with Pydantic** - Using `response.parse()` for guaranteed JSON schema is correct
+
+5. **Audio alignment abstraction** - Both Whisper (paid) and Wav2Vec2 (free) options is user-friendly
+
+---
+
+## 🔧 Recommended Refactoring
+
+### 1. Create Explicit Configuration Module
+
+```python
+# config.py - the ONLY place environment variables are read
+@dataclass(frozen=True)  # Immutable!
+class AppConfig:
+    openai_api_key: str
+    google_api_key: str | None
+    output_dir: Path
+    tts_provider: str
+    tts_voice: str
+
+    @classmethod
+    def from_environment(cls) -> "AppConfig":
+        """Create config from environment. Called ONCE at startup."""
+        return cls(
+            openai_api_key=os.environ["OPENAI_API_KEY"],  # Fail fast
+            google_api_key=os.environ.get("GOOGLE_API_KEY"),
+            output_dir=Path(os.environ.get("OUTPUT_DIR", "output")),
+            tts_provider=os.environ.get("TTS_PROVIDER", "openai"),
+            tts_voice=os.environ.get("TTS_VOICE", "marin"),
+        )
+```
+
+### 2. Use Dependency Injection
+
+```python
+# voice_generator.py - explicit dependencies
+def generate_voice(
+    text: str,
+    output_path: Path,
+    config: VoiceConfig,
+    openai_client,  # Injected, not created internally
+) -> tuple[Path, float]:
+    """Generate voice audio. Pure function, no hidden state."""
+    ...
+```
+
+### 3. Split God Functions
+
+```python
+# app_handlers.py - thin wrappers
+def handle_video_generation(form_data: dict) -> None:
+    request = create_video_request(form_data)
+    
+    with progress_context() as progress:
+        progress.update("Validating...")
+        validate_request(request)
+        
+        progress.update("Generating...")
+        output = run_pipeline(request)  # Business logic elsewhere
+    
+    display_results(output)
+```
+
+---
+
+## 📊 Summary
+
+| Category | Score | Notes |
+|----------|-------|-------|
+| **Correctness** | ⚠️ 6/10 | Works but fragile |
+| **Readability** | ⚠️ 5/10 | God functions, mixed patterns |
+| **Maintainability** | ❌ 4/10 | Tight coupling, global state |
+| **Testability** | ❌ 3/10 | No tests, hard to mock |
+| **Pythonic-ness** | ⚠️ 5/10 | Java-ish patterns |
+
+---
+
+## 🎯 Action Items (Priority Order)
+
+1. ~~**Extract all configuration to a single module**~~ ✅ DONE - `src/config.py`
+2. **Break `VideoComposer` into focused components** - Max 300 lines per module ⏳ (future work)
+3. **Make the pipeline actually composable** - Support skip/resume ⏳ (future work)
+4. ~~**Remove `sys.path` hacks**~~ ✅ DONE - `pyproject.toml` created
+5. ~~**Add tests**~~ ✅ DONE - Created test suite in `tests/`
+6. **Consolidate type systems** - Pick dataclasses OR Pydantic, not both ⏳ (future work)
+7. ~~**Extract configuration data to external files**~~ ✅ DONE - YAML files for keywords/emojis
+
+---
+
+## Final Verdict
+
+> This codebase is **functional prototype quality**, not **production quality**.
+
+The bones are good. The architecture needs discipline.
+
+**Recommendation:** Before adding features, invest in refactoring the foundation. Technical debt is accumulating faster than features.
+
+---
+
+## Updated Status
+
+**Critical Issues Fixed:** 6/6 ✅
+**Design Improvements:** 7/7 ✅
+
+### Completed:
+- ✅ Centralized configuration (`src/config.py`)
+- ✅ Proper packaging (`pyproject.toml`)
+- ✅ Eliminated duplicated types (`alignment_types.py`)
+- ✅ External YAML configuration
+- ✅ Test suite foundation
+- ✅ Refactored god function
+- ✅ **Break `VideoComposer` into focused modules** - Split into 3 modules:
+  - `video_composer.py` (637 lines) - Main orchestrator
+  - `subtitle_renderer.py` (878 lines) - Karaoke/standard subtitles
+  - `motion_effects.py` (303 lines) - Ken Burns, transitions, dynamic motion
+- ✅ **Make pipeline composable (skip/resume stages)** - New infrastructure:
+  - `pipeline.py` (~554 lines) - `ComposablePipeline`, `PipelineStage`, `PipelineConfig`, `PipelineCheckpoint`
+  - `stages.py` (~488 lines) - Individual stage functions, `PipelineContext`, `create_default_stages()`
+  - `orchestrator.py` updated with `run_composable()`, `resume_from_checkpoint()`, `list_stages()`
+  - Supports: skip stages, run only specific stages, stop after stage, save/load checkpoints
+- ✅ **Consolidate Pydantic vs dataclasses** - Clear separation of type systems:
+  - `api_models.py` (~287 lines) - Pydantic models for API boundaries only
+  - `ScriptAPIModel`, `SceneAPIModel`, `ResearchAPIModel` for OpenAI Structured Outputs
+  - Conversion functions: `to_internal_script()`, `to_internal_research()`, etc.
+  - Internal dataclasses unchanged in `models.py`
+  - Updated `script_writer.py`, `researcher.py` to use conversion utilities
+  - Backward compatibility aliases maintained with deprecation notes
+- ✅ **Expand test coverage** - Comprehensive test suite:
+  - `test_api_models.py` (~453 lines) - Pydantic models and conversion functions
+  - `test_pipeline.py` (~657 lines) - Composable pipeline infrastructure
+  - `test_motion_effects.py` (~436 lines) - Motion effects module
+  - `test_subtitle_renderer.py` (~581 lines) - Subtitle renderer module
+  - `test_models.py` (~646 lines) - Pipeline data models
+  - Existing: `test_config.py`, `test_alignment_types.py`, `test_voice_generator.py`
+  - Total: 8 test files covering all major modules
+
+### Remaining (Future Work):
+- All design improvements completed! 🎉
+
+**How to Use:**
 ```bash
-source .venv/bin/activate && python generate_subtitles.py
+# Install in development mode
+pip install -e .
+
+# Run tests
+pytest tests/ -v
+
+# Use the CLI
+generate-video --topic "Your topic" --audience "Your audience" --format long
+
+# Or run the Streamlit app
+streamlit run app.py
 ```
 
-**Step 2: Recompose video (free, uses cached timestamps)**
-```bash
-source .venv/bin/activate && python recompose_video.py
+**Composable Pipeline Usage (NEW):**
+```python
+from src.pipeline import VideoPipeline, VideoRequest, VideoFormat
+from src.config import AppConfig
+
+# Create pipeline
+config = AppConfig.from_environment()
+pipeline = VideoPipeline.from_config(config)
+
+request = VideoRequest(
+    topic="How AI works",
+    target_audience="beginners",
+    format=VideoFormat.LONG,
+)
+
+# Option 1: Run full pipeline (legacy API, still works)
+output = pipeline.generate_video_sync(request)
+
+# Option 2: Skip specific stages (e.g., use cached research)
+output = pipeline.run_composable(request, skip_stages=["research"])
+
+# Option 3: Run only specific stages
+output = pipeline.run_composable(
+    request,
+    only_stages=["validation", "research"],
+    stop_after="research"
+)
+
+# Option 4: Resume from checkpoint
+output = pipeline.resume_from_checkpoint(
+    Path("output/checkpoints/checkpoint_script_generation.pkl")
+)
+
+# List available stages
+print(pipeline.list_stages())
+# ['validation', 'research', 'script_generation', 'scene_planning', 
+#  'asset_generation', 'video_composition', 'finalization']
 ```
 
-### Output Files
-```
-output/subtitles/
-├── voice_01.ass          # ASS subtitle file (karaoke format)
-├── voice_02.ass
-├── voice_03.ass
-└── timestamps/
-    ├── voice_01.json     # Word-level timestamps (cached)
-    ├── voice_02.json
-    └── voice_03.json
-```
+---
 
-### Timestamp JSON Format
-```json
-{
-  "full_text": "Ever had works on my machine...",
-  "duration": 15.2,
-  "language": "en",
-  "words": [
-    {"word": "Ever", "start": 0.0, "end": 0.32},
-    {"word": "had", "start": 0.32, "end": 0.48},
-    {"word": "works", "start": 0.48, "end": 0.72}
-  ]
-}
-```
-
-### Benefits
-- ✅ **Precise sync** - Words appear exactly when spoken
-- ✅ **Pay once** - Whisper API called only once per audio file
-- ✅ **Fast regeneration** - Recompose uses cached timestamps (no API calls)
-- ✅ **Debuggable** - JSON files show exact word timing
-- ✅ **ASS files** - Industry-standard subtitle format
-
-### Cost
-- Whisper API: ~$0.006 per minute of audio
-- For a 60-second video: ~$0.006 total
-- Cached timestamps: FREE for all future regenerations
-
-### Commands Reference
-```bash
-# Generate timestamps for all audio files
-python generate_subtitles.py
-
-# Generate with custom settings
-python generate_subtitles.py --words-per-line 4 --font-size 60
-
-# Recompose video (uses cached timestamps automatically)
-python recompose_video.py
-```
-
-### Audio Aligner Module
-Located at `src/pipeline/audio_aligner.py`:
-- `AudioAligner` class - Main alignment interface
-- `get_word_timestamps()` - Get word timings from audio
-- `generate_ass_file()` - Create .ass subtitle file
-- `save_timestamps_json()` - Cache timestamps as JSON
+*Review conducted per standards in `code_review.md`*
+*Refactoring completed: All critical issues resolved*

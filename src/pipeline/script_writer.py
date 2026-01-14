@@ -5,12 +5,18 @@ This module transforms research content into engaging, well-structured
 video scripts with smooth transitions and cohesive storytelling.
 
 Uses OpenAI Structured Outputs with Pydantic for guaranteed valid JSON.
+
+TYPE SYSTEM:
+- Pydantic models (ScriptAPIModel) are used at API boundary
+- Internal dataclasses (Script) are used for pipeline data flow
+- Conversion is handled by to_internal_script() from api_models.py
 """
 
 from typing import Optional
 
-from ..utils.ai_client import AIClient, ScriptModel, get_ai_client
-from .models import ResearchResult, Scene, Script, VideoFormat, VideoRequest
+from ..utils.ai_client import AIClient, get_ai_client
+from .api_models import ScriptAPIModel, to_internal_script
+from .models import ResearchResult, Script, VideoFormat, VideoRequest
 
 
 class ScriptWriter:
@@ -73,62 +79,43 @@ KEY POINTS TO COVER:
 {examples_text}
 {analogies_text}
 
-=== NARRATIVE CONTINUITY RULES (CRITICAL) ===
+=== YOUR TASK ===
 
-Your script must tell ONE cohesive story with a clear narrative arc:
-1. SETUP → EXPLORATION → PAYOFF structure
-2. Each scene must directly connect to the previous one
-3. Use transitional phrases that link ideas naturally
-4. Maintain a consistent tone and perspective throughout
-5. The ending must clearly resolve or callback to the opening hook
+You are the creative director. Analyze the topic and decide:
+1. How many scenes are needed to explain this topic well (could be 2, 3, 4, 5, or more)
+2. How to structure the narrative for maximum impact
+3. How long each scene should be based on content complexity
 
-=== VISUAL CONTINUITY RULES (CRITICAL) ===
+There is NO fixed structure. You decide what works best for THIS specific topic.
 
-Choose ONE visual theme/metaphor and maintain it across ALL scenes:
-- If Scene 1 uses a "journey" metaphor, all scenes should continue that journey
-- If Scene 1 shows a specific environment (office, lab, etc.), stay in that world
-- Visual descriptions should feel like they're from the SAME video, not random clips
-- Describe visuals that naturally flow from one to the next
+=== NARRATIVE GUIDELINES ===
 
-=== SCRIPT STRUCTURE ===
+- Start with a hook that grabs attention immediately (no "Hey guys" or "Welcome to")
+- Build a cohesive story with natural flow between scenes
+- Each scene should connect logically to the next
+- End with a memorable takeaway or callback to the opening
 
-SCENE 1 - HOOK (5-8 seconds):
-- Start with a relatable problem, surprising fact, or bold question
-- NO "Hey guys" or "Welcome to" - jump straight into value
-- Establish the visual world/metaphor that continues throughout
-- Visual: Set the scene that will evolve across the video
-- Example hook styles: "Ever wondered why...", "Here's a secret that...", "What if I told you..."
+=== VISUAL CONTINUITY ===
 
-SCENE 2 - CORE CONTENT (35-45 seconds):
-- This is the MAIN educational content
-- Explain the topic clearly in 5-8 sentences
-- Use ONE concrete example or analogy (from the established visual world)
-- Break down complex ideas into simple terms
-- Make every sentence add real value
-- TRANSITION: Use a phrase that connects back to the hook
-- Visual: Continue/evolve the visual metaphor from Scene 1
-- Minimum 80 words for this scene
+- Choose ONE visual theme/metaphor and maintain it across ALL scenes
+- Visual descriptions should feel like they're from the SAME video
+- Describe visuals that naturally evolve and flow from one to the next
+- Each visual_description should specify: subject, composition, lighting, color palette
 
-SCENE 3 - MEMORABLE ENDING (8-12 seconds):
-- Callback to the opening hook or problem
-- Summarize the key takeaway in 1-2 sentences
-- End with a thought-provoking question OR call to action
-- Visual: Complete the visual journey with a satisfying conclusion
+=== SCENE GUIDELINES ===
 
-=== TRANSITION EXAMPLES ===
-- "So how does this solve our problem?" (connects back to hook)
-- "And that's exactly why..." (links cause to effect)
-- "Building on that..." (continues the thread)
-- "Here's where it gets interesting..." (escalates engagement)
-- "Remember when we said...? Well..." (explicit callback)
+For each scene you create:
+- Duration: 3-15 seconds depending on content (you decide)
+- Narration: As many words as needed to explain clearly
+- Smooth transitions between scenes
 
 === OUTPUT REQUIREMENTS ===
 
+- Total duration: 45-60 seconds
 - Total narration: 120-180 words
+- Number of scenes: YOU DECIDE based on topic complexity
 - Write ACTUAL educational content, not placeholders
 - Be specific and informative, not generic
-- Visual descriptions must describe ONE consistent visual style/world
-- Each visual_description should specify: subject, composition, lighting, color palette
 - key_visual_elements should include recurring motifs across scenes"""
 
         system_prompt = """You are an expert short-form video scriptwriter who creates viral educational content with exceptional narrative flow.
@@ -145,10 +132,10 @@ Every visual description you write could be a frame from the SAME animated expla
 
         result = self.ai_client.generate_structured(
             prompt=prompt,
-            response_model=ScriptModel,
+            response_model=ScriptAPIModel,
             system_prompt=system_prompt,
         )
-        return self._convert_to_script(result)
+        return self._convert_and_validate(result)
 
     def _generate_long_script(
         self, request: VideoRequest, research: ResearchResult
@@ -182,94 +169,53 @@ KEY POINTS TO COVER:
 {facts_text}
 {examples_text}
 
-=== NARRATIVE CONTINUITY RULES (CRITICAL) ===
+=== YOUR TASK ===
+
+You are the creative director. Analyze the topic and decide:
+1. How many scenes are needed to explain this topic thoroughly (could be 4, 5, 6, 8, 10, or more)
+2. How to structure the narrative for maximum clarity and engagement
+3. How long each scene should be based on content complexity
+4. What visual metaphor/world will tie everything together
+
+There is NO fixed number of scenes. You decide what works best for THIS specific topic.
+
+=== NARRATIVE GUIDELINES ===
 
 Your script must tell ONE cohesive story:
-1. Establish a CENTRAL QUESTION or PROBLEM in Scene 1 that gets answered by the end
-2. Each scene must build on the previous one - no random jumps
-3. Use transitional sentences at the START of each scene that reference the previous scene
-4. Create a "golden thread" narrative that connects everything
-5. The conclusion must clearly resolve the opening question/problem
+- Establish a CENTRAL QUESTION or PROBLEM early that gets answered by the end
+- Each scene must build on the previous one - no random jumps
+- Use transitional sentences that reference what came before
+- Create a "golden thread" narrative that connects everything
+- The conclusion must clearly resolve the opening question/problem
 
-=== VISUAL CONTINUITY RULES (CRITICAL) ===
+=== VISUAL CONTINUITY ===
 
 Create a consistent visual world:
-1. Choose a PRIMARY VISUAL METAPHOR or SETTING that appears throughout
-   - Examples: "a journey through a digital landscape", "building blocks assembling",
-     "a day in the life scenario", "an evolving diagram/flowchart"
-2. Use a CONSISTENT COLOR PALETTE across all visual descriptions
-3. Recurring visual motifs should appear in multiple scenes
-4. Visuals should EVOLVE and BUILD, not randomly change
-5. Think of this as storyboarding an animated explainer video
+- Choose a PRIMARY VISUAL METAPHOR or SETTING that appears throughout
+- Use a CONSISTENT COLOR PALETTE across all visual descriptions
+- Recurring visual motifs should appear in multiple scenes
+- Visuals should EVOLVE and BUILD, not randomly change
+- Think of this as storyboarding an animated explainer video
 
-=== SCRIPT STRUCTURE (6-8 scenes) ===
+=== SCENE GUIDELINES ===
 
-SCENE 1 - HOOK + CENTRAL QUESTION (10-15 seconds):
-- Start with a compelling question, surprising fact, or relatable scenario
-- This question/problem should be ANSWERED by the end
-- Establish the visual world that will continue throughout
-- Transition: Set up what we'll explore
-- 3-4 sentences
-
-SCENE 2 - CONTEXT & FOUNDATION (20-30 seconds):
-- Set context for the topic - why it matters NOW
-- Preview the journey we'll take
-- Establish foundational concept #1
-- Transition: "With that foundation, let's explore..."
-- Visual: Expand on Scene 1's world
-- 4-6 sentences
-
-SCENES 3-5 - MAIN CONTENT (2-6 minutes total):
-Each scene should:
-- Cover ONE main concept that builds on previous scenes
-- START with a transition referencing what we just learned
-- Use examples/analogies from within our visual world
-- END with a bridge to the next concept
+For each scene you create:
+- Duration: 10-60 seconds depending on content (you decide)
+- Narration: As many sentences as needed to explain clearly
+- Start with a transition referencing what we just learned
+- End with a bridge to the next concept
 - Visual: Continue evolving the same visual metaphor
-- 6-10 sentences each
-
-Scene 3: "Building on [Scene 2 concept], now let's look at..."
-Scene 4: "This connects to [previous idea] because..."
-Scene 5: "Now we can see how all of this comes together..."
-
-SCENE 6 - PRACTICAL APPLICATION (30-45 seconds):
-- "So how do you actually USE this?"
-- Real-world application that ties back to opening scenario
-- Visual: Show the concepts in action
-- 4-6 sentences
-
-SCENE 7 - SYNTHESIS & ANSWER (20-30 seconds):
-- Explicitly ANSWER the central question from Scene 1
-- Connect all the dots - show how everything we learned fits together
-- Visual: Complete visual metaphor (journey ends, building complete, etc.)
-- 3-5 sentences
-
-SCENE 8 - CALL TO ACTION (10-15 seconds):
-- Brief recap of the transformation (before → after)
-- Engagement prompt (comment, subscribe)
-- Tease related content
-- 2-3 sentences
-
-=== TRANSITION TOOLKIT ===
-
-Use these patterns to maintain flow:
-- Referential: "Remember when we said X? Here's why that matters..."
-- Building: "Now that we understand X, we can explore Y..."
-- Contrasting: "But here's where it gets interesting..."
-- Questioning: "So you might be wondering... how does X work with Y?"
-- Connecting: "This directly connects to what we saw earlier..."
-- Revealing: "And this is exactly why [callback to hook]..."
 
 === OUTPUT REQUIREMENTS ===
 
+- Total duration: {min_duration // 60}-{max_duration // 60} minutes
 - Total word count: 500-800 words
+- Number of scenes: YOU DECIDE based on topic complexity
 - Write FULL narration for each scene (not placeholders)
 - Use analogies appropriate for {request.target_audience}
 - Include specific examples and clear explanations
 - Visual descriptions must describe ONE consistent visual style/world
-- Specify in each visual_description: subject, action, lighting, color tone
-- key_visual_elements should include 2-3 elements, with at least 1 recurring across scenes
-- Each scene's mood should flow naturally from the previous (no jarring shifts)"""
+- key_visual_elements should include recurring motifs across scenes"""
 
         system_prompt = """You are an expert educational video scriptwriter known for creating content with exceptional narrative flow and visual consistency.
 
@@ -290,42 +236,28 @@ You NEVER write disconnected scenes. Every scene you write is part of ONE cohesi
 
         result = self.ai_client.generate_structured(
             prompt=prompt,
-            response_model=ScriptModel,
+            response_model=ScriptAPIModel,
             system_prompt=system_prompt,
         )
-        return self._convert_to_script(result)
+        return self._convert_and_validate(result)
 
-    def _convert_to_script(self, model: ScriptModel) -> Script:
-        """Convert Pydantic ScriptModel to internal Script dataclass."""
-        scenes = []
-        for scene_model in model.scenes:
-            scene = Scene(
-                scene_number=scene_model.scene_number,
-                narration=scene_model.narration,
-                visual_description=scene_model.visual_description,
-                duration_seconds=scene_model.duration_seconds,
-                mood=scene_model.mood,
-                key_visual_elements=scene_model.key_visual_elements,
-            )
-            scenes.append(scene)
+    def _convert_and_validate(self, api_model: ScriptAPIModel) -> Script:
+        """
+        Convert Pydantic API model to internal Script dataclass and validate.
 
-        script = Script(
-            title=model.title,
-            hook=model.hook,
-            scenes=scenes,
-            total_duration_seconds=model.total_duration_seconds,
-            hashtags=model.hashtags,
-            thumbnail_prompt=model.thumbnail_prompt,
-            description=model.description,
-        )
+        Uses the centralized conversion function from api_models.py.
+        """
+        # Convert using the standard conversion function
+        script = to_internal_script(api_model)
 
-        # Validate content quality
+        # Validate content quality - check average words per scene
         total_words = sum(len(scene.narration.split()) for scene in script.scenes)
-        min_words = 80 if len(script.scenes) <= 4 else 300
+        avg_words_per_scene = total_words / len(script.scenes) if script.scenes else 0
+        min_avg_words = 15  # At least 15 words per scene on average
 
-        if total_words < min_words:
+        if avg_words_per_scene < min_avg_words:
             raise ValueError(
-                f"Script content too thin: {total_words} words (minimum: {min_words}). "
+                f"Script content too thin: {avg_words_per_scene:.0f} words/scene (minimum: {min_avg_words}). "
                 f"AI generated insufficient content."
             )
 

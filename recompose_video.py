@@ -27,10 +27,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
-
-# Load environment variables from .env file
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -137,8 +133,13 @@ def main():
     print(f"📝 Narrations: {len([n for n in narrations if n])} found")
     print(f"⏱️  Cached timestamps: {len([t for t in cached_timestamps if t])} found")
 
-    # Import video composer
-    from src.pipeline.video_composer import VideoComposer
+    # Import video composer - works with pip install -e . or direct script execution
+    try:
+        from src.pipeline.video_composer import VideoComposer
+    except ImportError:
+        # Fallback for running without package installation
+        sys.path.insert(0, str(Path(__file__).parent))
+        from src.pipeline.video_composer import VideoComposer
 
     # Create composer with viral settings
     composer = VideoComposer(output_dir=output_dir)

@@ -1,0 +1,93 @@
+# Emphasis Keywords Configuration
+# Words that get highlighted in different colors for viral shorts
+#
+# Categories:
+#   - strong: High-impact words (yellow/gold highlight)
+#   - action: Call-to-action words (cyan/blue highlight)
+#   - stats: Numbers and statistics (green highlight)
+
+strong:
+  # Power words
+  - secret
+  - amazing
+  - incredible
+  - powerful
+  - essential
+  - critical
+  - important
+  - key
+  - game-changer
+  - revolutionary
+  - breakthrough
+  - ultimate
+  - proven
+  - guaranteed
+
+  # Absolutes
+  - must
+  - never
+  - always
+  - best
+  - worst
+  - biggest
+  - most
+  - first
+  - last
+  - only
+
+  # Urgency
+  - free
+  - new
+  - now
+  - today
+  - instantly
+  - immediately
+
+action:
+  # Learning verbs
+  - learn
+  - discover
+  - master
+  - unlock
+
+  # Creation verbs
+  - build
+  - create
+  - make
+
+  # Control verbs
+  - start
+  - stop
+  - try
+  - use
+  - get
+  - find
+  - see
+
+  # Engagement verbs
+  - watch
+  - click
+  - subscribe
+  - follow
+  - share
+  - comment
+  - like
+
+stats:
+  # Percentage indicators
+  - percent
+  - "%"
+
+  # Large numbers
+  - million
+  - billion
+  - thousand
+  - hundred
+
+  # Multipliers
+  - twice
+  - triple
+  - double
+  - half
+  - 10x
+  - 100x

@@ -6,79 +6,25 @@ enabling true karaoke-style subtitle synchronization.
 
 Usage:
     aligner = AudioAligner()
-    word_timestamps = aligner.get_word_timestamps("audio.wav")
-    # Returns: [{"word": "Hello", "start": 0.0, "end": 0.32}, ...]
+    result = aligner.get_word_timestamps("audio.wav")
+    # Returns: AlignmentResult with WordTimestamp objects
 
     # Generate .ass subtitle file
-    aligner.generate_ass_file(word_timestamps, "output/subtitles.ass")
+    aligner.generate_ass_file(result, "output/subtitles.ass")
 """
 
+import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Union
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
-# Load environment variables
-load_dotenv()
+# Import shared types - eliminates duplication with wav2vec2_aligner
+from .alignment_types import AlignmentResult, SubtitleStyle, WordTimestamp
 
-
-@dataclass
-class WordTimestamp:
-    """A single word with its timing information."""
-
-    word: str
-    start: float  # Start time in seconds
-    end: float  # End time in seconds
-
-    @property
-    def duration(self) -> float:
-        """Duration of the word in seconds."""
-        return self.end - self.start
-
-    def __repr__(self) -> str:
-        return f"WordTimestamp('{self.word}', {self.start:.2f}s - {self.end:.2f}s)"
-
-
-@dataclass
-class AlignmentResult:
-    """Result of audio alignment containing all word timestamps."""
-
-    words: list[WordTimestamp]
-    full_text: str
-    duration: float  # Total audio duration
-    language: str
-
-    def get_words_in_range(self, start: float, end: float) -> List[WordTimestamp]:
-        """Get all words within a time range."""
-        return [w for w in self.words if w.start >= start and w.end <= end]
-
-    def group_into_phrases(self, words_per_group: int = 3) -> List[List[WordTimestamp]]:
-        """Group words into phrases for display."""
-        groups = []
-        current_group = []
-
-        for word in self.words:
-            current_group.append(word)
-
-            # Check for sentence-ending punctuation
-            ends_sentence = any(word.word.rstrip().endswith(p) for p in [".", "!", "?"])
-            ends_clause = any(word.word.rstrip().endswith(p) for p in [",", ";", ":"])
-
-            if len(current_group) >= words_per_group or ends_sentence:
-                groups.append(current_group)
-                current_group = []
-            elif ends_clause and len(current_group) >= words_per_group - 1:
-                groups.append(current_group)
-                current_group = []
-
-        # Add remaining words
-        if current_group:
-            groups.append(current_group)
-
-        return groups
+# Re-export for backwards compatibility
+__all__ = ["AudioAligner", "AlignmentResult", "WordTimestamp", "align_audio_file"]
 
 
 class AudioAligner:
@@ -89,36 +35,25 @@ class AudioAligner:
     enabling accurate karaoke-style subtitle synchronization.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "whisper-1"):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = "whisper-1",
+    ):
         """
         Initialize the audio aligner.
 
         Args:
-            api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
-            model: Whisper model to use (whisper-1 is the only option currently)
+            api_key: OpenAI API key. If not provided, reads from OPENAI_API_KEY
+                    environment variable.
+            model: Whisper model to use (whisper-1 is currently the only option)
         """
-        # Try multiple ways to get the API key
-        self.api_key = (
-            api_key or os.environ.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        )
-
-        if not self.api_key:
-            # Try loading from .env file directly
-            from pathlib import Path
-
-            env_path = Path(__file__).parent.parent.parent / ".env"
-            if env_path.exists():
-                with open(env_path) as f:
-                    for line in f:
-                        if line.startswith("OPENAI_API_KEY="):
-                            self.api_key = (
-                                line.split("=", 1)[1].strip().strip('"').strip("'")
-                            )
-                            break
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
 
         if not self.api_key:
             raise ValueError(
-                "OpenAI API key required for audio alignment. Set OPENAI_API_KEY env var."
+                "OpenAI API key required for audio alignment. "
+                "Pass api_key parameter or set OPENAI_API_KEY environment variable."
             )
 
         self.client = OpenAI(api_key=self.api_key)
@@ -228,6 +163,7 @@ class AudioAligner:
         font_size: int = 24,
         primary_color: str = "&H00FFFFFF",  # White
         highlight_color: str = "&H0000D7FF",  # Gold (BGR format)
+        style: Optional[SubtitleStyle] = None,
     ) -> Path:
         """
         Generate an .ass subtitle file from alignment result.
@@ -240,12 +176,22 @@ class AudioAligner:
             font_size: Font size
             primary_color: Primary text color (ASS format &HAABBGGRR)
             highlight_color: Highlight color for karaoke effect
+            style: Optional SubtitleStyle object (overrides other style params)
 
         Returns:
             Path to the generated .ass file
         """
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Use style object if provided, otherwise use individual params
+        if style is None:
+            style = SubtitleStyle(
+                font_name=font_name,
+                font_size=font_size,
+                primary_color=primary_color,
+                highlight_color=highlight_color,
+            )
 
         # ASS file header
         ass_content = f"""[Script Info]
@@ -259,8 +205,8 @@ YCbCr Matrix: None
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},{primary_color},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,10,10,50,1
-Style: Karaoke,{font_name},{font_size},{highlight_color},&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,1,2,10,10,50,1
+{style.to_ass_style("Default")}
+{style.to_highlight_style("Karaoke")}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -278,7 +224,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             # Build karaoke text with timing
             karaoke_text = ""
-            for i, word in enumerate(group):
+            for word in group:
                 # Duration in centiseconds
                 duration_cs = int((word.end - word.start) * 100)
                 # Use \k for karaoke timing (fill effect)
@@ -306,7 +252,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return f"{hours}:{minutes:02d}:{secs:05.2f}"
 
     def save_timestamps_json(
-        self, result: AlignmentResult, output_path: Union[str, Path]
+        self,
+        result: AlignmentResult,
+        output_path: Union[str, Path],
     ) -> Path:
         """
         Save word timestamps to a JSON file for debugging/reuse.
@@ -318,22 +266,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         Returns:
             Path to the generated JSON file
         """
-        import json
-
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        data = {
-            "full_text": result.full_text,
-            "duration": result.duration,
-            "language": result.language,
-            "words": [
-                {"word": w.word, "start": w.start, "end": w.end} for w in result.words
-            ],
-        }
-
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(result.to_dict(), f, indent=2, ensure_ascii=False)
 
         print(f"  💾 Saved timestamps JSON: {output_path}")
         return output_path
@@ -344,6 +281,7 @@ def align_audio_file(
     language: Optional[str] = None,
     save_ass: Optional[Union[str, Path]] = None,
     save_json: Optional[Union[str, Path]] = None,
+    api_key: Optional[str] = None,
 ) -> List[dict]:
     """
     Convenience function to get word timestamps as a list of dicts.
@@ -353,11 +291,12 @@ def align_audio_file(
         language: Optional language code
         save_ass: Optional path to save .ass subtitle file
         save_json: Optional path to save timestamps JSON
+        api_key: Optional OpenAI API key
 
     Returns:
         List of dicts with 'word', 'start', 'end' keys
     """
-    aligner = AudioAligner()
+    aligner = AudioAligner(api_key=api_key)
     result = aligner.get_word_timestamps(audio_path, language)
 
     # Save files if requested
@@ -366,7 +305,7 @@ def align_audio_file(
     if save_json:
         aligner.save_timestamps_json(result, save_json)
 
-    return [{"word": w.word, "start": w.start, "end": w.end} for w in result.words]
+    return [w.to_dict() for w in result.words]
 
 
 # Example usage and testing

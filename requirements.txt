@@ -2,6 +2,13 @@
 openai>=1.0.0
 google-genai
 
+# Wav2Vec2 Force Alignment (FREE local alignment)
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Web UI
+streamlit>=1.30.0
+
 # Google APIs for YouTube upload
 google-api-python-client
 google-auth-httplib2

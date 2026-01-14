@@ -3,11 +3,17 @@ Web Research Module - Searches and curates content for video generation.
 
 This module handles research to gather accurate information about the video topic.
 Uses OpenAI Structured Outputs with Pydantic for guaranteed valid JSON.
+
+TYPE SYSTEM:
+- Pydantic models (ResearchAPIModel) are used at API boundary
+- Internal dataclasses (ResearchResult) are used for pipeline data flow
+- Conversion is handled by to_internal_research() from api_models.py
 """
 
 from typing import Optional
 
-from ..utils.ai_client import AIClient, ResearchModel, get_ai_client
+from ..utils.ai_client import AIClient, get_ai_client
+from .api_models import ResearchAPIModel, to_internal_research
 from .models import ResearchResult, VideoRequest
 
 
@@ -79,21 +85,12 @@ Style preference: {request.style}"""
 
         result = self.ai_client.generate_structured(
             prompt=prompt,
-            response_model=ResearchModel,
+            response_model=ResearchAPIModel,
             system_prompt=system_prompt,
         )
 
-        # Convert Pydantic model to internal ResearchResult
-        research_result = ResearchResult(
-            topic=request.topic,
-            key_points=result.key_points,
-            facts=[{"fact": f.fact, "source": f.source} for f in result.facts],
-            examples=result.examples,
-            analogies=result.analogies,
-            sources=[],
-            related_topics=result.related_topics,
-            raw_content="",
-        )
+        # Convert Pydantic API model to internal ResearchResult using standard converter
+        research_result = to_internal_research(result, topic=request.topic)
 
         print(
             f"✅ Research complete: {len(research_result.key_points)} key points found"

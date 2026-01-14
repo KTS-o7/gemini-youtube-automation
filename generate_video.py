@@ -3,7 +3,13 @@
 Video Generation CLI - Command-line interface for AI video generation.
 
 Usage:
-    # Generate a long-form video
+    # Install the package first (recommended):
+    pip install -e .
+
+    # Then use the CLI:
+    generate-video --topic "How does machine learning work?" --audience "beginners" --format long
+
+    # Or run this script directly:
     python generate_video.py \
         --topic "How does machine learning work?" \
         --audience "beginners new to AI" \
@@ -20,15 +26,14 @@ Usage:
     export OPENAI_API_KEY=sk-...
     export AI_PROVIDER=openai  # or "gemini"
     export TTS_PROVIDER=gtts   # or "openai" or "elevenlabs"
+
+Note: For best results, install the package with `pip install -e .` to avoid import issues.
 """
 
 import argparse
 import os
 import sys
 from pathlib import Path
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
 
 from dotenv import load_dotenv
 
@@ -56,8 +61,6 @@ Environment Variables:
   AI_PROVIDER       - AI provider: "openai" or "gemini" (default: openai)
   OPENAI_API_KEY    - OpenAI API key (required for openai provider)
   GOOGLE_API_KEY    - Google API key (required for gemini provider)
-  TTS_PROVIDER      - TTS provider: "gtts", "openai", or "elevenlabs" (default: gtts)
-  TTS_VOICE         - Voice for OpenAI TTS (default: alloy)
   PEXELS_API_KEY    - Pexels API key for fallback images (optional)
         """,
     )
@@ -101,6 +104,16 @@ Environment Variables:
         help="TTS provider: gtts (free), openai ($0.015/min), elevenlabs (default: openai)",
     )
     parser.add_argument(
+        "--voice",
+        default="marin",
+        help="Voice for OpenAI TTS: alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar (default: marin)",
+    )
+    parser.add_argument(
+        "--voice-instructions",
+        default=None,
+        help='Instructions for voice style, e.g. "Speak in a calm, professional tone" (OpenAI TTS only)',
+    )
+    parser.add_argument(
         "--cleanup",
         action="store_true",
         help="Clean up temporary files after generation",
@@ -130,12 +143,25 @@ Environment Variables:
         print("   Set it with: export GOOGLE_API_KEY=...")
         sys.exit(1)
 
-    # Override TTS provider if specified
+    # Override TTS settings if specified
     if args.tts:
         os.environ["TTS_PROVIDER"] = args.tts
+    if args.voice:
+        os.environ["TTS_VOICE"] = args.voice
+    if args.voice_instructions:
+        os.environ["TTS_INSTRUCTIONS"] = args.voice_instructions
 
     # Import pipeline components
-    from src.pipeline import TTSProvider, VideoFormat, VideoPipeline, VideoRequest
+    # These imports work when the package is installed with `pip install -e .`
+    # or when running from the project root directory
+    try:
+        from src.pipeline import TTSProvider, VideoFormat, VideoPipeline, VideoRequest
+        from src.pipeline.voice_generator import VoiceConfig
+    except ImportError:
+        # Fallback for running script directly without installation
+        sys.path.insert(0, str(Path(__file__).parent))
+        from src.pipeline import TTSProvider, VideoFormat, VideoPipeline, VideoRequest
+        from src.pipeline.voice_generator import VoiceConfig
 
     # Determine TTS provider
     tts_env = os.environ.get("TTS_PROVIDER", "gtts").lower()
@@ -143,6 +169,19 @@ Environment Variables:
         TTSProvider(tts_env)
         if tts_env in ["gtts", "openai", "elevenlabs"]
         else TTSProvider.GTTS
+    )
+
+    # Build voice configuration explicitly (no env var reads in constructor)
+    voice_config = VoiceConfig(
+        provider=tts_provider,
+        openai_voice=args.voice,
+        openai_speed=float(os.environ.get("TTS_SPEED", "1.0")),
+        openai_instructions=args.voice_instructions,
+        elevenlabs_api_key=os.environ.get("ELEVENLABS_API_KEY"),
+        elevenlabs_voice_id=os.environ.get(
+            "ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"
+        ),
+        fallback_enabled=True,  # Enable gTTS fallback
     )
 
     # Create video request
@@ -153,10 +192,11 @@ Environment Variables:
         style=args.style,
     )
 
-    # Initialize pipeline
+    # Initialize pipeline with explicit configuration
     pipeline = VideoPipeline(
         output_dir=args.output_dir,
-        tts_provider=tts_provider,
+        voice_config=voice_config,
+        subtitle_aligner=os.environ.get("SUBTITLE_ALIGNER", "wav2vec2"),
     )
 
     try:
