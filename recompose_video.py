@@ -159,16 +159,16 @@ def main():
     # Pass cached timestamps to composer
     composer._cached_timestamps = cached_timestamps
 
-    # Vertical video settings (short format) - 2K with 9:16 aspect ratio
-    video_width = 1440  # 2K vertical width
-    video_height = 2560  # 2K vertical height (9:16 aspect ratio)
+    # Horizontal video settings (long format) - 1080p with 16:9 aspect ratio
+    video_width = 1920  # 1080p horizontal width
+    video_height = 1080  # 1080p horizontal height (16:9 aspect ratio)
 
-    # Adjust for 2K vertical - LARGER font for crisp subtitles
-    composer.subtitle_font_size = 140  # Much bigger for 2K sharpness
-    composer.subtitle_stroke_width = 5  # Clean stroke (not too thick)
-    composer.max_chars_per_line = 18
-    composer.subtitle_position = ("center", 0.75)
-    composer.words_per_group = 2
+    # Adjust for 1080p horizontal - readable subtitles
+    composer.subtitle_font_size = 55  # Good size for horizontal
+    composer.subtitle_stroke_width = 4  # Clean stroke
+    composer.max_chars_per_line = 35
+    composer.subtitle_position = ("center", 0.82)
+    composer.words_per_group = 4
 
     # Generate output filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

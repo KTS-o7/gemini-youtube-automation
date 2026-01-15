@@ -7,6 +7,11 @@ ensuring visual consistency across all scenes through:
 - Recurring visual motifs
 - Coherent style progression
 
+KEN BURNS OPTIMIZATION:
+- 🖼️ Static image descriptions optimized for zoom/pan effects
+- 📐 Layered compositions with foreground/midground/background
+- 🎯 Clear focal points that work with slow reveals
+
 VIRAL SHORTS OPTIMIZATION:
 - ⚡ Fast scene pacing (max 5-8 seconds per scene for shorts)
 - 🎬 Quick transitions for engagement
@@ -17,6 +22,7 @@ from typing import Optional
 
 from ..utils.ai_client import AIClient, get_ai_client
 from .models import PlannedScene, Script, VideoFormat, VideoRequest
+from .prompts import PromptLoader
 
 
 class ScenePlanner:
@@ -270,62 +276,178 @@ class ScenePlanner:
         request: VideoRequest,
     ) -> str:
         """
-        Create a detailed, cohesive image prompt that maintains visual continuity.
-        """
-        prompt_parts = []
+        Create a detailed, cohesive image prompt optimized for Ken Burns effects.
 
-        # === SCENE POSITION CONTEXT ===
+        Ken Burns Optimization:
+        - Describes STATIC images only (no animation language)
+        - Includes depth layers for zoom effects to reveal
+        - Clear focal points for pan effects
+        - Composition that works with slow zoom in OR zoom out
+
+        Prompts are loaded from external template files for easy tweaking.
+        """
+        # === CLEAN THE VISUAL DESCRIPTION ===
+        # Remove animation words from the script's visual description
+        cleaned_visual = self._clean_animation_words(scene.visual_description)
+
+        # === SCENE POSITION CONTEXT (affects Ken Burns direction) ===
         if scene_index == 0:
-            position_context = "Opening scene - establish the visual world"
-            composition_hint = "Wide establishing shot or centered focal point"
+            position_context = "Opening scene"
+            composition_hint = "Wide establishing shot with rich background detail - zoom IN will reveal the main subject"
+            ken_burns_hint = "Composition should work with ZOOM IN: interesting background that leads eye to central focal point"
         elif scene_index == total_scenes - 1:
-            position_context = "Final scene - visual conclusion/resolution"
-            composition_hint = "Satisfying closure, completed journey"
+            position_context = "Final scene"
+            composition_hint = "Centered focal point with context around it - zoom OUT will reveal the bigger picture"
+            ken_burns_hint = "Composition should work with ZOOM OUT: strong center that reveals surrounding context"
         else:
             progress = (scene_index + 1) / total_scenes
             if progress < 0.4:
-                position_context = "Early scene - building/expanding the visual world"
-                composition_hint = "Building complexity, adding layers"
+                position_context = "Early scene"
+                composition_hint = "Building complexity with layered depth"
+                ken_burns_hint = "Include foreground, midground, and background elements for zoom to traverse"
             elif progress < 0.7:
-                position_context = "Middle scene - peak visual complexity"
-                composition_hint = "Full visual richness, dynamic composition"
+                position_context = "Middle scene"
+                composition_hint = (
+                    "Peak visual richness with multiple points of interest"
+                )
+                ken_burns_hint = "Rich detail throughout - zoom effect will slowly reveal different areas"
             else:
-                position_context = "Late scene - converging toward resolution"
-                composition_hint = "Coming together, simplifying toward conclusion"
+                position_context = "Late scene"
+                composition_hint = (
+                    "Converging toward resolution, simplified but detailed"
+                )
+                ken_burns_hint = (
+                    "Clear visual hierarchy - zoom will emphasize the key element"
+                )
 
-        # === MAIN SUBJECT ===
-        prompt_parts.append(
-            f"SCENE {scene_index + 1}/{total_scenes}: {scene.visual_description}"
-        )
-
-        # === VISUAL CONTINUITY INSTRUCTIONS ===
-        prompt_parts.append(f"\n--- VISUAL CONTINUITY ({position_context}) ---")
-
-        # Describe what should persist from previous scene
+        # === BUILD CONTINUITY INSTRUCTION ===
         if previous_context:
-            prompt_parts.append(
-                f"Continue from previous scene's visual style. "
-                f"Previous mood: {previous_context['mood']}."
+            continuity_instruction = (
+                f"Must feel like the NEXT FRAME from the same video. "
+                f"Previous scene mood: {previous_context['mood']}."
+            )
+        else:
+            continuity_instruction = "Establish the visual world for this video series."
+
+        # === FORMAT-SPECIFIC SETTINGS ===
+        if request.format == VideoFormat.SHORT:
+            aspect_ratio = "9:16 (vertical/portrait)"
+            format_specific_instructions = (
+                "Subject centered for mobile viewing\n"
+                "Bold, eye-catching focal point visible on small screens\n"
+                "Leave some headroom for text overlay"
+            )
+        else:
+            aspect_ratio = "16:9 (horizontal/landscape)"
+            format_specific_instructions = (
+                "Cinematic widescreen framing with rule of thirds\n"
+                "Visual weight balanced across the frame\n"
+                "Lower third area suitable for text overlay"
             )
 
+        # === LOAD AND FORMAT TEMPLATE ===
+        try:
+            template = PromptLoader.load("scene_planner_image_prompt")
+            return template.format(
+                scene_number=scene_index + 1,
+                total_scenes=total_scenes,
+                cleaned_visual_description=cleaned_visual,
+                position_context=position_context,
+                ken_burns_hint=ken_burns_hint,
+                continuity_instruction=continuity_instruction,
+                color_palette=visual_theme["color_palette"],
+                lighting=visual_theme["lighting"],
+                visual_style=visual_theme["style"],
+                recurring_motifs=", ".join(recurring_motifs[:2])
+                if recurring_motifs
+                else "None specified",
+                key_visual_elements=", ".join(scene.key_visual_elements)
+                if scene.key_visual_elements
+                else "None specified",
+                mood=scene.mood.upper(),
+                mood_visual_guide=self._get_mood_visual_guide(scene.mood),
+                composition_hint=composition_hint,
+                aspect_ratio=aspect_ratio,
+                format_specific_instructions=format_specific_instructions,
+            )
+        except (FileNotFoundError, KeyError):
+            # Fallback to inline prompt if template not found or has missing keys
+            return self._create_fallback_image_prompt(
+                cleaned_visual=cleaned_visual,
+                scene_index=scene_index,
+                total_scenes=total_scenes,
+                position_context=position_context,
+                ken_burns_hint=ken_burns_hint,
+                composition_hint=composition_hint,
+                continuity_instruction=continuity_instruction,
+                visual_theme=visual_theme,
+                recurring_motifs=recurring_motifs,
+                scene=scene,
+                aspect_ratio=aspect_ratio,
+                format_specific_instructions=format_specific_instructions,
+            )
+
+    def _create_fallback_image_prompt(
+        self,
+        cleaned_visual: str,
+        scene_index: int,
+        total_scenes: int,
+        position_context: str,
+        ken_burns_hint: str,
+        composition_hint: str,
+        continuity_instruction: str,
+        visual_theme: dict,
+        recurring_motifs: list[str],
+        scene,
+        aspect_ratio: str,
+        format_specific_instructions: str,
+    ) -> str:
+        """Fallback prompt generation if template file is not available."""
+        prompt_parts = []
+
+        # === STATIC IMAGE INSTRUCTION (CRITICAL) ===
+        prompt_parts.append(
+            "Generate a SINGLE STATIC IMAGE (photograph or illustration)."
+        )
+        prompt_parts.append(
+            "This is NOT an animation - describe only what is VISIBLE in ONE frozen moment."
+        )
+        prompt_parts.append("")
+
+        # === MAIN SUBJECT ===
+        prompt_parts.append(f"SCENE {scene_index + 1}/{total_scenes}: {cleaned_visual}")
+
+        # === KEN BURNS OPTIMIZATION ===
+        prompt_parts.append(
+            f"\n--- COMPOSITION FOR SLOW ZOOM/PAN ({position_context}) ---"
+        )
+        prompt_parts.append(ken_burns_hint)
+        prompt_parts.append("Include DEPTH LAYERS for zoom to reveal:")
+        prompt_parts.append(
+            "  • Foreground: Elements closest to viewer (can be slightly blurred)"
+        )
+        prompt_parts.append("  • Midground: Main subject with sharp focus")
+        prompt_parts.append("  • Background: Context and atmosphere (softer focus)")
+
+        # === VISUAL CONTINUITY INSTRUCTIONS ===
+        prompt_parts.append(f"\n--- VISUAL CONTINUITY ---")
+        prompt_parts.append(continuity_instruction)
+
         # === STYLE REQUIREMENTS ===
-        prompt_parts.append(f"\n--- CONSISTENT STYLE ---")
+        prompt_parts.append(f"\n--- CONSISTENT STYLE (same across all scenes) ---")
         prompt_parts.append(f"Color Palette: {visual_theme['color_palette']}")
         prompt_parts.append(f"Lighting: {visual_theme['lighting']}")
-        prompt_parts.append(f"Overall Style: {visual_theme['style']}")
+        prompt_parts.append(f"Visual Style: {visual_theme['style']}")
 
         # === RECURRING MOTIFS ===
         if recurring_motifs:
-            # Select 1-2 motifs to include in this scene
             motifs_for_scene = recurring_motifs[:2]
-            prompt_parts.append(
-                f"\n--- RECURRING VISUAL ELEMENTS (include at least one) ---"
-            )
-            prompt_parts.append(f"Visual motifs: {', '.join(motifs_for_scene)}")
+            prompt_parts.append(f"\n--- RECURRING VISUAL ELEMENTS ---")
+            prompt_parts.append(f"Include at least one: {', '.join(motifs_for_scene)}")
 
         # === KEY ELEMENTS FROM SCRIPT ===
         if scene.key_visual_elements:
-            prompt_parts.append(f"\n--- KEY ELEMENTS FOR THIS SCENE ---")
+            prompt_parts.append(f"\n--- SCENE-SPECIFIC ELEMENTS ---")
             prompt_parts.append(f"Must include: {', '.join(scene.key_visual_elements)}")
 
         # === MOOD ===
@@ -333,52 +455,95 @@ class ScenePlanner:
         prompt_parts.append(f"\n--- MOOD: {scene.mood.upper()} ---")
         prompt_parts.append(mood_visual_guide)
 
-        # === COMPOSITION ===
+        # === FORMAT-SPECIFIC COMPOSITION ===
         prompt_parts.append(f"\n--- COMPOSITION ---")
         prompt_parts.append(composition_hint)
-
-        if request.format == VideoFormat.SHORT:
-            prompt_parts.append("Vertical composition (9:16 aspect ratio)")
-            prompt_parts.append("Subject centered for mobile viewing")
-            prompt_parts.append(
-                "Bold, eye-catching composition visible on small screens"
-            )
-        else:
-            prompt_parts.append("Horizontal composition (16:9 aspect ratio)")
-            prompt_parts.append("Cinematic widescreen framing")
-            prompt_parts.append("Room for visual storytelling across the frame")
+        prompt_parts.append(f"Aspect Ratio: {aspect_ratio}")
+        prompt_parts.append(format_specific_instructions)
 
         # === TECHNICAL REQUIREMENTS ===
         prompt_parts.append(f"\n--- TECHNICAL REQUIREMENTS ---")
-        prompt_parts.append("High quality, sharp details")
-        prompt_parts.append("Professional photography/illustration quality")
-        prompt_parts.append("Clean, uncluttered composition with clear focal point")
+        prompt_parts.append("High resolution, sharp details on main subject")
         prompt_parts.append(
-            "Suitable as video background (subtle enough for text overlay)"
+            "Professional quality (photography or digital illustration)"
         )
+        prompt_parts.append("Subtle depth of field to separate layers")
         prompt_parts.append(
-            "ABSOLUTELY NO TEXT, WORDS, LETTERS, OR NUMBERS IN THE IMAGE"
+            "ABSOLUTELY NO TEXT, WORDS, LETTERS, NUMBERS, OR WATERMARKS"
+        )
+        prompt_parts.append("")
+        prompt_parts.append(
+            "REMEMBER: This is a STILL IMAGE, not a video frame or animation."
         )
 
         return "\n".join(prompt_parts)
 
+    def _clean_animation_words(self, visual_description: str) -> str:
+        """
+        Remove or replace animation-related words from visual descriptions.
+
+        Converts dynamic descriptions into static image descriptions.
+        """
+        import re
+
+        # Mapping of animation phrases to static equivalents
+        replacements = [
+            # Camera movements -> static compositions
+            (
+                r"camera zooms? (in|out|into|to)",
+                "close-up view of" if "in" else "wide shot of",
+            ),
+            (r"camera (pushes?|pulls?|moves?|pans?|tilts?|tracks?)", "view showing"),
+            (r"zoom(s|ing)? (in|out|into)", "detailed view of"),
+            (r"pan(s|ning)? (to|across|over)", "wide shot showing"),
+            # Animation words -> static equivalents
+            (r"animat(ed|ion|ing)", "illustrated"),
+            (r"(flies|flying|floats|floating) (out|in|around|through)", "positioned"),
+            (r"transform(s|ing|ation)", "shown as"),
+            (r"morph(s|ing)", "transitioning between"),
+            (r"(moves?|moving) (to|toward|across|through)", "positioned"),
+            (r"(spins?|spinning|rotates?|rotating)", "angled view of"),
+            (r"(fades?|fading) (in|out)", ""),
+            (r"(grows?|growing|shrinks?|shrinking)", ""),
+            (r"(appears?|appearing|disappears?|disappearing)", "visible"),
+            (r"(unfolds?|unfolding|opens?|opening)", "open"),
+            (r"(flows?|flowing)", "arranged in flowing pattern"),
+            (r"(pulses?|pulsing|glows? and fades?)", "softly glowing"),
+            # Sequence words -> single moment
+            (r"(then|next|after that|suddenly)", ""),
+            (r"(begins? to|starts? to)", ""),
+            (r"(continues? to|keeps?)", ""),
+        ]
+
+        result = visual_description
+        for pattern, replacement in replacements:
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+
+        # Clean up extra whitespace
+        result = re.sub(r"\s+", " ", result).strip()
+
+        return result
+
     def _get_mood_visual_guide(self, mood: str) -> str:
-        """Get visual guidance based on mood."""
+        """Get visual guidance based on mood, optimized for static images with Ken Burns."""
         mood_guides = {
-            "intriguing": "Mysterious atmosphere, subtle shadows, sense of discovery waiting",
-            "curious": "Open, inviting composition, elements that draw the eye deeper",
-            "exciting": "Dynamic angles, sense of motion, energetic composition",
-            "urgent": "High contrast, dramatic lighting, forward momentum",
-            "calm": "Balanced composition, soft gradients, peaceful atmosphere",
-            "informative": "Clear visual hierarchy, organized elements, professional clarity",
-            "educational": "Diagram-like clarity, logical arrangement, learning-friendly",
-            "serious": "Authoritative framing, stable composition, professional tone",
-            "friendly": "Warm tones, approachable composition, inviting atmosphere",
-            "energetic": "Vibrant colors, dynamic lines, sense of movement",
-            "inspiring": "Uplifting composition, aspirational imagery, hopeful lighting",
-            "motivational": "Empowering framing, forward-looking perspective, triumphant feel",
-            "conclusive": "Resolved composition, satisfying visual closure, complete feeling",
-            "challenging": "Bold framing, direct perspective, empowering composition",
+            "intriguing": "Mysterious atmosphere with subtle shadows; depth layers that invite exploration; sense of hidden details waiting to be revealed by zoom",
+            "curious": "Open, inviting composition with visual pathways that lead the eye; layered elements that reward closer inspection",
+            "exciting": "Dynamic diagonal lines and bold angles; high contrast; composition with visual tension even in stillness",
+            "urgent": "High contrast dramatic lighting; strong foreground elements; visual weight pushing toward focal point",
+            "calm": "Balanced symmetrical or rule-of-thirds composition; soft gradient backgrounds; peaceful negative space",
+            "informative": "Clear visual hierarchy with organized elements; professional clarity; distinct foreground subject against contextual background",
+            "educational": "Diagram-like clarity with logical spatial arrangement; labeled areas (visually, not with text); learning-friendly layers",
+            "serious": "Authoritative centered framing; stable horizontal lines; professional muted tones with depth",
+            "friendly": "Warm color temperature; approachable eye-level perspective; inviting soft lighting",
+            "energetic": "Vibrant saturated colors; dynamic compositional lines; visual rhythm through repeated elements",
+            "inspiring": "Upward-looking perspective or expansive view; aspirational scale; hopeful warm lighting",
+            "motivational": "Empowering low-angle or eye-level framing; forward-facing subject; triumphant golden lighting",
+            "conclusive": "Resolved centered composition; satisfying visual closure; complete feeling with clear focal point",
+            "challenging": "Bold direct framing; confrontational perspective; strong subject presence",
+            "playful": "Bright cheerful colors; whimsical arrangements; fun visual surprises in background details",
+            "wonder": "Awe-inspiring scale or detail; magical lighting effects; dreamlike atmosphere with depth",
+            "satisfying": "Harmonious balanced composition; resolved visual tension; completeness in arrangement",
         }
 
         mood_lower = mood.lower()
@@ -386,7 +551,7 @@ class ScenePlanner:
             if key in mood_lower:
                 return guide
 
-        return "Professional, polished aesthetic appropriate for the content"
+        return "Professional, polished aesthetic with clear focal point and layered depth for visual interest"
 
     def _determine_transition(
         self, scene_index: int, total_scenes: int, mood: str

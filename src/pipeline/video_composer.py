@@ -495,30 +495,46 @@ class VideoComposer:
             print(f"      🔊 Audio loaded: {audio_clip.duration:.1f}s")
             duration = audio_clip.duration + 0.3  # Smaller padding
 
-            # Create image clip and resize to fill frame (no black bars)
+            # Create image clip
             img_clip = ImageClip(str(img_path))
 
-            # Resize image to fill the video frame
+            # Check if resize needed
             img_w, img_h = img_clip.size
-            scale_w = video_width / img_w
-            scale_h = video_height / img_h
-            scale = max(scale_w, scale_h)  # Use max to fill (crop edges if needed)
+            if (img_w, img_h) == (video_width, video_height):
+                # Perfect match - no resize needed
+                img_clip = img_clip.set_duration(duration)
+            else:
+                # Need to resize/crop - use PIL directly to avoid moviepy ANTIALIAS issue
+                import numpy as np
+                from PIL import Image
 
-            img_clip = img_clip.resize(scale)
+                pil_img = Image.open(str(img_path))
 
-            # Center crop if needed
-            new_w, new_h = img_clip.size
-            if new_w > video_width or new_h > video_height:
-                x_center = (new_w - video_width) // 2
-                y_center = (new_h - video_height) // 2
-                img_clip = img_clip.crop(
-                    x1=x_center,
-                    y1=y_center,
-                    x2=x_center + video_width,
-                    y2=y_center + video_height,
-                )
+                # Scale to fill
+                scale_w = video_width / img_w
+                scale_h = video_height / img_h
+                scale = max(scale_w, scale_h)
 
-            img_clip = img_clip.set_duration(duration)
+                new_w = int(img_w * scale)
+                new_h = int(img_h * scale)
+                pil_img = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+                # Center crop
+                if new_w > video_width or new_h > video_height:
+                    x_center = (new_w - video_width) // 2
+                    y_center = (new_h - video_height) // 2
+                    pil_img = pil_img.crop(
+                        (
+                            x_center,
+                            y_center,
+                            x_center + video_width,
+                            y_center + video_height,
+                        )
+                    )
+
+                # Create clip from processed image
+                img_array = np.array(pil_img)
+                img_clip = ImageClip(img_array).set_duration(duration)
 
             # Add motion effects
             if self.motion_effects.config.enabled:

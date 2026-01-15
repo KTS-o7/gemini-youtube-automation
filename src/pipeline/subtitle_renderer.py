@@ -22,6 +22,141 @@ from moviepy.editor import TextClip
 
 from .config import load_emoji_mappings, load_emphasis_keywords
 
+# =========================================================================
+# HELPER FUNCTIONS FOR SMOOTH TRANSITIONS
+# =========================================================================
+
+
+def ease_in_out(t: float) -> float:
+    """
+    Smooth S-curve easing function (0.0 to 1.0).
+    Creates natural acceleration and deceleration.
+
+    Args:
+        t: Progress value between 0.0 and 1.0
+
+    Returns:
+        Eased value between 0.0 and 1.0
+    """
+    return t * t * (3.0 - 2.0 * t)
+
+
+def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """
+    Convert hex color string to RGB tuple.
+
+    Args:
+        hex_color: Color in hex format (e.g., "#FFD700" or "white")
+
+    Returns:
+        RGB tuple (r, g, b) with values 0-255
+    """
+    # Handle named colors
+    named_colors = {
+        "white": (255, 255, 255),
+        "black": (0, 0, 0),
+        "red": (255, 0, 0),
+        "green": (0, 255, 0),
+        "blue": (0, 0, 255),
+        "yellow": (255, 255, 0),
+        "cyan": (0, 255, 255),
+        "magenta": (255, 0, 255),
+    }
+
+    if hex_color.lower() in named_colors:
+        return named_colors[hex_color.lower()]
+
+    # Remove '#' if present
+    hex_color = hex_color.lstrip("#")
+
+    # Convert hex to RGB
+    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    """
+    Convert RGB tuple to hex color string.
+
+    Args:
+        rgb: RGB tuple (r, g, b) with values 0-255
+
+    Returns:
+        Hex color string (e.g., "#FFD700")
+    """
+    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
+def interpolate_color(color1: str, color2: str, t: float) -> str:
+    """
+    Interpolate between two colors.
+
+    Args:
+        color1: Start color (hex or named)
+        color2: End color (hex or named)
+        t: Interpolation factor (0.0 = color1, 1.0 = color2)
+
+    Returns:
+        Interpolated color as hex string
+    """
+    rgb1 = hex_to_rgb(color1)
+    rgb2 = hex_to_rgb(color2)
+
+    # Linear interpolation in RGB space
+    r = int(rgb1[0] + (rgb2[0] - rgb1[0]) * t)
+    g = int(rgb1[1] + (rgb2[1] - rgb1[1]) * t)
+    b = int(rgb1[2] + (rgb2[2] - rgb1[2]) * t)
+
+    return rgb_to_hex((r, g, b))
+
+
+def get_word_intensity(
+    current_time: float,
+    word_start: float,
+    word_end: float,
+    transition_duration: float = 0.15,
+) -> float:
+    """
+    Calculate highlight intensity for a word at a given time.
+    Creates smooth fade-in and fade-out transitions.
+
+    Args:
+        current_time: Current time in the video
+        word_start: Word start timestamp
+        word_end: Word end timestamp
+        transition_duration: Duration of fade transitions in seconds
+
+    Returns:
+        Intensity value between 0.0 (not highlighted) and 1.0 (fully highlighted)
+    """
+    # Before transition starts
+    if current_time < word_start - transition_duration:
+        return 0.0
+
+    # Fading in (before word starts)
+    elif current_time < word_start:
+        progress = (
+            current_time - (word_start - transition_duration)
+        ) / transition_duration
+        return ease_in_out(progress)
+
+    # Fully highlighted (during word)
+    elif current_time <= word_end:
+        return 1.0
+
+    # Fading out (after word ends)
+    elif current_time < word_end + transition_duration:
+        progress = (current_time - word_end) / transition_duration
+        return ease_in_out(1.0 - progress)
+
+    # After transition ends
+    else:
+        return 0.0
+
+
+# =========================================================================
+# DATA CLASSES
+# =========================================================================
+
 
 @dataclass
 class SubtitleStyle:
@@ -44,6 +179,11 @@ class SubtitleStyle:
     max_chars_per_line: int = 20
     words_per_group: int = 4
     min_word_duration: float = 0.15
+
+    # Smooth transition settings
+    use_smooth_transitions: bool = True
+    transition_duration: float = 0.15  # seconds for smooth fade in/out
+    gradient_falloff: float = 1.0  # gradient intensity multiplier
 
 
 @dataclass
@@ -381,6 +521,13 @@ class SubtitleRenderer:
         Returns:
             List of subtitle clips
         """
+        # Use smooth transitions if enabled
+        if self.style.use_smooth_transitions:
+            return self._create_smooth_gradient_karaoke(
+                word_timestamps, video_width, y_pos, audio_duration
+            )
+
+        # Otherwise use the old method
         clips = []
 
         # Group words into phrases
@@ -432,6 +579,260 @@ class SubtitleRenderer:
                     clips.extend(word_clips)
                 except Exception as e:
                     print(f"      ⚠️ Failed to create clip for '{wt['word']}': {e}")
+
+        return clips
+
+    def _create_smooth_gradient_karaoke(
+        self,
+        word_timestamps: list,
+        video_width: int,
+        y_pos: int,
+        audio_duration: float,
+    ) -> list:
+        """
+        Create smooth gradient karaoke clips with flowing color transitions.
+
+        All words in a phrase stay visible, with a smooth gradient wave
+        sweeping across them as they're spoken.
+
+        Args:
+            word_timestamps: List of dicts with 'word', 'start', 'end'
+            video_width: Width of video
+            y_pos: Y position for subtitles
+            audio_duration: Total audio duration
+
+        Returns:
+            List of subtitle clips with smooth transitions
+        """
+        clips = []
+
+        # Group words into phrases
+        groups = []
+        current_group = []
+
+        for wt in word_timestamps:
+            current_group.append(wt)
+            word = wt["word"]
+
+            ends_sentence = any(word.rstrip().endswith(p) for p in [".", "!", "?"])
+            ends_clause = any(word.rstrip().endswith(p) for p in [",", ";", ":"])
+
+            if len(current_group) >= self.style.words_per_group or ends_sentence:
+                groups.append(current_group)
+                current_group = []
+            elif ends_clause and len(current_group) >= self.style.words_per_group - 1:
+                groups.append(current_group)
+                current_group = []
+
+        if current_group:
+            groups.append(current_group)
+
+        # Create smooth clips for each phrase group
+        for group in groups:
+            try:
+                group_clips = self._create_smooth_phrase_clips(
+                    group, video_width, y_pos
+                )
+                clips.extend(group_clips)
+            except Exception as e:
+                print(f"      ⚠️ Failed to create smooth phrase clips: {e}")
+                # Fall back to old method for this group
+                words = [wt["word"] for wt in group]
+                for i, wt in enumerate(group):
+                    word_start = wt["start"]
+                    word_end = wt["end"]
+                    word_duration = word_end - word_start
+                    if word_duration <= 0:
+                        continue
+                    word_lower = wt["word"].lower().strip(".,!?;:")
+                    highlight_color = self._get_word_color(
+                        word_lower, is_highlighted=True
+                    )
+                    try:
+                        word_clips = self._create_word_group_clips_precise(
+                            words,
+                            i,
+                            word_start,
+                            word_duration,
+                            video_width,
+                            y_pos,
+                            highlight_color,
+                        )
+                        clips.extend(word_clips)
+                    except Exception:
+                        pass
+
+        return clips
+
+    def _create_smooth_phrase_clips(
+        self,
+        word_group: list,
+        video_width: int,
+        y_pos: int,
+    ) -> list:
+        """
+        Create smooth transition clips for a phrase group.
+
+        Each word gets one clip that lasts the entire phrase duration,
+        with a time-based color transformation function.
+
+        Args:
+            word_group: List of word timestamp dicts
+            video_width: Width of video
+            y_pos: Y position for subtitles
+
+        Returns:
+            List of clips with smooth color transitions
+        """
+        clips = []
+
+        if not word_group:
+            return clips
+
+        # Calculate phrase duration
+        phrase_start = word_group[0]["start"]
+        phrase_end = word_group[-1]["end"]
+        phrase_duration = phrase_end - phrase_start
+
+        if phrase_duration <= 0:
+            return clips
+
+        # Extract word info
+        words = [wt["word"] for wt in word_group]
+        word_timestamps = [(wt["start"], wt["end"]) for wt in word_group]
+
+        # Calculate total width for horizontal positioning
+        temp_clips = []
+        for word in words:
+            tc = TextClip(
+                word + " ",
+                fontsize=self.style.font_size,
+                color=self.style.color,
+                font=str(self.font_path) if self.font_path.exists() else "Arial-Bold",
+                stroke_color=self.style.stroke_color,
+                stroke_width=self.style.stroke_width,
+                method="label",
+            )
+            temp_clips.append(tc)
+
+        total_width = sum(tc.w for tc in temp_clips)
+
+        # Close temporary clips
+        for tc in temp_clips:
+            tc.close()
+
+        # Start position for centering
+        x_offset = (video_width - total_width) // 2
+
+        # Create clips for each word with smooth color transitions
+        for i, word in enumerate(words):
+            word_start, word_end = word_timestamps[i]
+            word_lower = word.lower().strip(".,!?;:")
+
+            # Get the highlight color for this word (may vary based on emphasis)
+            highlight_color = self._get_word_color(word_lower, is_highlighted=True)
+
+            try:
+                # Create the word clip with smooth color transition
+                word_clips = self._create_smooth_word_clip(
+                    word + (" " if i < len(words) - 1 else ""),
+                    word_start,
+                    word_end,
+                    phrase_start,
+                    phrase_duration,
+                    (x_offset, y_pos),
+                    highlight_color,
+                )
+
+                clips.extend(word_clips)
+
+                # Update x offset for next word
+                x_offset += temp_clips[i].w
+
+            except Exception as e:
+                print(f"      ⚠️ Failed to create smooth word clip for '{word}': {e}")
+
+        return clips
+
+    def _create_smooth_word_clip(
+        self,
+        word: str,
+        word_start: float,
+        word_end: float,
+        phrase_start: float,
+        phrase_duration: float,
+        position: tuple,
+        highlight_color: str,
+    ) -> list:
+        """
+        Create smooth transition clips for a single word using TWO overlapping clips.
+
+        This is the SIMPLE, proven approach:
+        1. Base clip (white) - visible entire phrase
+        2. Highlight clip (gold) - fades in/out smoothly during word timing
+
+        Args:
+            word: The word text
+            word_start: Word start timestamp
+            word_end: Word end timestamp
+            phrase_start: Phrase start timestamp
+            phrase_duration: Total phrase duration
+            position: (x, y) position for the clip
+            highlight_color: Color when word is highlighted
+
+        Returns:
+            List of TextClip objects [base_clip, highlight_clip]
+        """
+        clips = []
+
+        # 1. Create base clip (white) - visible for entire phrase
+        base_clip = TextClip(
+            word,
+            fontsize=self.style.font_size,
+            color=self.style.color,
+            font=str(self.font_path) if self.font_path.exists() else "Arial-Bold",
+            stroke_color=self.style.stroke_color,
+            stroke_width=self.style.stroke_width,
+            method="label",
+        )
+
+        base_clip = (
+            base_clip.set_start(phrase_start)
+            .set_duration(phrase_duration)
+            .set_position(position)
+        )
+        clips.append(base_clip)
+
+        # 2. Create highlight clip (gold) - fades in/out during word
+        transition_dur = self.style.transition_duration
+
+        # Calculate when highlight should appear
+        highlight_start = max(phrase_start, word_start - transition_dur)
+        highlight_end = min(phrase_start + phrase_duration, word_end + transition_dur)
+        highlight_duration = highlight_end - highlight_start
+
+        if highlight_duration > 0.01:  # Only create if duration is meaningful
+            highlight_clip = TextClip(
+                word,
+                fontsize=self.style.font_size,
+                color=highlight_color,
+                font=str(self.font_path) if self.font_path.exists() else "Arial-Bold",
+                stroke_color=self.style.stroke_color,
+                stroke_width=self.style.stroke_width,
+                method="label",
+            )
+
+            # Apply smooth crossfade
+            fade_dur = min(transition_dur, highlight_duration / 3)
+            if fade_dur > 0.01:
+                highlight_clip = (
+                    highlight_clip.set_start(highlight_start)
+                    .set_duration(highlight_duration)
+                    .set_position(position)
+                    .crossfadein(fade_dur)
+                    .crossfadeout(fade_dur)
+                )
+                clips.append(highlight_clip)
 
         return clips
 

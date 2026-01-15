@@ -47,14 +47,26 @@ class SceneAPIModel(BaseModel):
     """
 
     scene_number: int = Field(description="Sequential scene number starting from 1")
-    narration: str = Field(description="Text for voice narration/TTS")
-    visual_description: str = Field(description="Description for image generation")
+    narration: str = Field(
+        description="Text for voice narration. For scenes 2+, MUST start with a transition phrase "
+        "that connects to the previous scene (e.g., 'But here's the thing...', 'So how does this work?', "
+        "'Now that we understand X...'). Should flow naturally when combined with other scenes."
+    )
+    visual_description: str = Field(
+        description="Description for a STATIC IMAGE (photograph or illustration). "
+        "Describe a FROZEN MOMENT, not animation or motion. Use composition terms like "
+        "'close-up of', 'wide shot showing', 'in the foreground/background'. "
+        "Include depth layers (foreground, subject, background) for Ken Burns zoom effects. "
+        "NEVER use words like 'animating', 'moving', 'flying', 'zooming', 'transforming'."
+    )
     duration_seconds: float = Field(
         default=0.0, description="Estimated duration in seconds"
     )
     mood: str = Field(default="informative", description="Emotional tone of the scene")
     key_visual_elements: List[str] = Field(
-        default_factory=list, description="Key elements to include in the visual"
+        default_factory=list,
+        description="Key visual elements to include. Should include at least one RECURRING MOTIF "
+        "that appears across multiple scenes for visual continuity.",
     )
 
 
@@ -66,9 +78,16 @@ class ScriptAPIModel(BaseModel):
     Convert to internal `Script` dataclass using `to_internal_script()`.
     """
 
-    title: str = Field(description="Catchy video title")
-    hook: str = Field(description="Opening hook to grab attention")
-    scenes: List[SceneAPIModel] = Field(description="List of scenes in order")
+    title: str = Field(description="Catchy video title that creates curiosity")
+    hook: str = Field(
+        description="Opening hook that poses a QUESTION or PROMISE that the video will answer/fulfill. "
+        "This creates narrative tension that the final scene should resolve."
+    )
+    scenes: List[SceneAPIModel] = Field(
+        description="List of scenes in order. Scenes must flow as ONE CONTINUOUS NARRATIVE - "
+        "each scene (except first) must start with a transition connecting to previous content. "
+        "The final scene must resolve/answer the opening hook."
+    )
     total_duration_seconds: float = Field(
         default=0.0, description="Total estimated duration"
     )
@@ -76,7 +95,9 @@ class ScriptAPIModel(BaseModel):
         default_factory=list, description="Relevant hashtags for the video"
     )
     thumbnail_prompt: str = Field(
-        default="", description="Prompt for generating thumbnail image"
+        default="",
+        description="Prompt for generating a STATIC thumbnail image. "
+        "Describe a single striking image, not animation. No text in the image.",
     )
     description: str = Field(default="", description="Video description for platforms")
 

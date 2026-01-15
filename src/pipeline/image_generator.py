@@ -5,6 +5,10 @@ This module handles image generation using AI models (OpenAI DALL-E/GPT-Image)
 for creating scene backgrounds and thumbnails.
 
 Fails loud on errors - no fallback images.
+
+PROMPTS:
+- Thumbnail prompt template is loaded from external file in ./prompts/
+- Edit those files to tweak prompt behavior without changing code
 """
 
 from io import BytesIO
@@ -15,6 +19,7 @@ from PIL import Image, ImageFilter
 
 from ..utils.ai_client import AIClient, get_ai_client
 from .models import PlannedScene, VideoFormat, VideoRequest
+from .prompts import PromptLoader
 
 
 class ImageGenerator:
@@ -127,9 +132,34 @@ class ImageGenerator:
         return output_path
 
     def _create_thumbnail_prompt(self, title: str, request: VideoRequest) -> str:
-        """Create an effective thumbnail prompt."""
-        return f"""Create an eye-catching YouTube thumbnail image for a video titled "{title}".
+        """Create an effective thumbnail prompt using external template."""
+        # Determine format-specific settings
+        if request.format == VideoFormat.SHORT:
+            format_type = "short-form vertical"
+            orientation = "Vertical (9:16)"
+            viewing_context = "mobile viewing"
+        else:
+            format_type = "long-form horizontal"
+            orientation = "Horizontal (16:9)"
+            viewing_context = "desktop viewing"
 
+        # Try to load from external template
+        try:
+            template = PromptLoader.load("image_generator_thumbnail")
+            return template.format(
+                title=title,
+                topic=request.topic,
+                target_audience=request.target_audience,
+                format_type=format_type,
+                orientation=orientation,
+                viewing_context=viewing_context,
+                mood="curiosity and engagement",
+            )
+        except (FileNotFoundError, KeyError):
+            # Fallback to inline prompt if template not found
+            return f"""Generate an eye-catching YouTube thumbnail image.
+
+Title: {title}
 Topic: {request.topic}
 Target Audience: {request.target_audience}
 
@@ -137,11 +167,12 @@ Requirements:
 - Bold, vibrant colors that stand out
 - High contrast and dramatic lighting
 - Professional, polished look
-- Suitable for {"vertical mobile" if request.format == VideoFormat.SHORT else "horizontal desktop"} viewing
+- {orientation} orientation for {viewing_context}
 - NO text, NO words, NO letters, NO numbers in the image
 - Central focal point that draws the eye
 - Clean composition with space for text overlay
-"""
+
+This is a STATIC IMAGE - describe what would make viewers want to click."""
 
     def _apply_overlay(self, image: Image.Image, opacity: int = 40) -> Image.Image:
         """

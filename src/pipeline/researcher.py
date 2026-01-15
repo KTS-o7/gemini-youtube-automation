@@ -8,6 +8,10 @@ TYPE SYSTEM:
 - Pydantic models (ResearchAPIModel) are used at API boundary
 - Internal dataclasses (ResearchResult) are used for pipeline data flow
 - Conversion is handled by to_internal_research() from api_models.py
+
+PROMPTS:
+- System and user prompts are loaded from external files in ./prompts/
+- Edit those files to tweak prompt behavior without changing code
 """
 
 from typing import Optional
@@ -15,6 +19,7 @@ from typing import Optional
 from ..utils.ai_client import AIClient, get_ai_client
 from .api_models import ResearchAPIModel, to_internal_research
 from .models import ResearchResult, VideoRequest
+from .prompts import PromptLoader
 
 
 class ContentResearcher:
@@ -55,33 +60,22 @@ class ContentResearcher:
         """
         print(f"🔍 Researching topic: {request.topic}")
 
-        prompt = f"""Research the topic "{request.topic}" for a video targeting {request.target_audience}.
+        # Load prompts from external files
+        user_prompt_template = PromptLoader.load("researcher_user")
+        system_prompt_template = PromptLoader.load("researcher_system")
 
-Provide comprehensive, accurate information that will help create an engaging {request.format.value}-form video.
+        # Format the prompts with variables
+        prompt = user_prompt_template.format(
+            topic=request.topic,
+            target_audience=request.target_audience,
+            format=request.format.value,
+            style=request.style,
+        )
 
-Requirements:
-- key_points: 5-7 main points to cover, ordered logically to build understanding
-- facts: 3-5 interesting, accurate facts with sources (use "general knowledge" if no specific source)
-- examples: 2-4 concrete, real-world examples that {request.target_audience} can relate to
-- analogies: 2-3 simple analogies that explain complex concepts using familiar things
-- related_topics: 2-3 topics for potential follow-up videos
-
-Make sure:
-- Content is appropriate for {request.target_audience}
-- Key points flow logically and build on each other
-- Examples are specific and relatable, not generic
-- Analogies simplify without oversimplifying
-- Facts are accurate and interesting"""
-
-        system_prompt = f"""You are an expert researcher and educator specializing in creating content for {request.target_audience}.
-
-Your research is known for:
-- Accuracy and depth
-- Clear, logical organization
-- Relatable examples that resonate with the audience
-- Analogies that make complex topics accessible
-
-Style preference: {request.style}"""
+        system_prompt = system_prompt_template.format(
+            target_audience=request.target_audience,
+            style=request.style,
+        )
 
         result = self.ai_client.generate_structured(
             prompt=prompt,
